@@ -17,11 +17,16 @@ import {
     MenuItem,
     FormControl,
     InputLabel,
-    InputAdornment
+    InputAdornment,
+    Tooltip,
+    Stack
 } from '@mui/material';
 import {
     Close as CloseIcon,
-    Save as SaveIcon
+    Save as SaveIcon,
+    Add as AddIcon,
+    Delete as DeleteIcon,
+    Info as InfoIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { URI_API } from '../config/api';
@@ -36,24 +41,38 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
     const [listaResponsables, setListaResponsables] = useState([]);
     const [montoTotal, setMontoTotal] = useState(0);
     const [montoActualizado, setMontoActualizado] = useState(0);
-    const [responsable1, setResponsable1] = useState('');
-    const [responsable2, setResponsable2] = useState('');
-    const [porcentaje1, setPorcentaje1] = useState(70);
-    const [porcentaje2, setPorcentaje2] = useState(30);
     const [utilidad, setUtilidad] = useState(0);
+
+    // Array de responsables
+    const [responsables, setResponsables] = useState([
+        { nombre: '', porcentaje: 100, comision: 0 }
+    ]);
+
     useEffect(() => {
         if (open && facturaId) {
             cargarFactura();
             cargarResponsables();
         }
     }, [open, facturaId]);
+
     useEffect(() => {
         if (utilidad < 0.22) {
-            setMontoActualizado(montoTotal * utilidad / 0.22)
+            setMontoActualizado(montoTotal * utilidad / 0.22);
         } else {
-            setMontoActualizado(montoTotal)
+            setMontoActualizado(montoTotal);
         }
-    }, [montoTotal])
+    }, [montoTotal, utilidad]);
+
+    // Recalcular comisiones cuando cambia el monto o los porcentajes
+    useEffect(() => {
+        const comisionBase = montoActualizado * 0.01;
+        const nuevosResponsables = responsables.map(r => ({
+            ...r,
+            comision: comisionBase * (r.porcentaje / 100)
+        }));
+        setResponsables(nuevosResponsables);
+    }, [montoActualizado]);
+
     const cargarResponsables = async () => {
         try {
             const response = await axios.get(`${API_URL}/usuarios`);
@@ -70,13 +89,41 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
 
             const response = await axios.get(`${API_URL}/invoice/${facturaId}`);
             const data = response.data;
+
             setFactura(data);
-            setUtilidad(data.utilidad_bruta)
+            setUtilidad(data.utilidad_bruta);
             setMontoTotal(data.monto_total);
-            setResponsable1(data.responsable_1);
-            setResponsable2(data.responsable_2);
-            setPorcentaje1(data.porcentaje_1 * 100);
-            setPorcentaje2(data.porcentaje_2 * 100);
+
+            // Cargar responsables desde el nuevo formato
+            if (data.responsables && data.responsables.length > 0) {
+                setResponsables(
+                    data.responsables.map(r => ({
+                        nombre: r.nombre,
+                        porcentaje: r.porcentaje * 100, // Convertir a porcentaje
+                        comision: r.comision || 0
+                    }))
+                );
+            } else {
+                // Fallback al formato antiguo si existe
+                const responsablesLegacy = [];
+                if (data.responsable_1) {
+                    responsablesLegacy.push({
+                        nombre: data.responsable_1,
+                        porcentaje: (data.porcentaje_1 || 0.7) * 100,
+                        comision: data.comision_1 || 0
+                    });
+                }
+                if (data.responsable_2) {
+                    responsablesLegacy.push({
+                        nombre: data.responsable_2,
+                        porcentaje: (data.porcentaje_2 || 0.3) * 100,
+                        comision: data.comision_2 || 0
+                    });
+                }
+                setResponsables(responsablesLegacy.length > 0 ? responsablesLegacy : [
+                    { nombre: '', porcentaje: 100, comision: 0 }
+                ]);
+            }
         } catch (error) {
             console.error('Error cargando factura:', error);
             setError(error.response?.data?.detail || 'Error al cargar la factura');
@@ -85,9 +132,42 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
         }
     };
 
-    const calcularComision = (monto, porcentaje) => {
-        const comisionBase = monto * 0.01;
-        return comisionBase * (porcentaje / 100);
+    const agregarResponsable = () => {
+        setResponsables([
+            ...responsables,
+            { nombre: '', porcentaje: 50, comision: 0 }
+        ]);
+    };
+
+    const eliminarResponsable = (index) => {
+        if (responsables.length > 1) {
+            const nuevosResponsables = responsables.filter((_, i) => i !== index);
+            setResponsables(nuevosResponsables);
+        }
+    };
+
+    const actualizarResponsable = (index, campo, valor) => {
+        const nuevosResponsables = [...responsables];
+        nuevosResponsables[index] = {
+            ...nuevosResponsables[index],
+            [campo]: valor
+        };
+
+        // Recalcular comisión
+        if (campo === 'porcentaje') {
+            const comisionBase = montoActualizado * 0.01;
+            nuevosResponsables[index].comision = comisionBase * (valor / 100);
+        }
+
+        setResponsables(nuevosResponsables);
+    };
+
+    const calcularPorcentajeTotal = () => {
+        return responsables.reduce((sum, r) => sum + (parseFloat(r.porcentaje) || 0), 0);
+    };
+
+    const calcularComisionTotal = () => {
+        return responsables.reduce((sum, r) => sum + (r.comision || 0), 0);
     };
 
     const validarFormulario = () => {
@@ -95,23 +175,31 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
             return { valido: false, mensaje: 'Los montos no pueden ser negativos' };
         }
 
-        if (!responsable1 || responsable1.trim() === '') {
-            return { valido: false, mensaje: 'Debe especificar al menos un responsable principal' };
+        if (responsables.length === 0) {
+            return { valido: false, mensaje: 'Debe haber al menos un responsable' };
         }
 
-        if (porcentaje1 <= 0 || porcentaje1 > 100) {
-            return { valido: false, mensaje: 'El porcentaje del responsable 1 debe estar entre 0 y 100' };
+        for (let i = 0; i < responsables.length; i++) {
+            const resp = responsables[i];
+
+            if (!resp.nombre || resp.nombre.trim() === '') {
+                return { valido: false, mensaje: `El responsable ${i + 1} debe tener un nombre` };
+            }
+
+            if (resp.porcentaje < 0) {
+                return { valido: false, mensaje: `El porcentaje del responsable ${i + 1} no puede ser negativo` };
+            }
+
+            if (resp.porcentaje > 200) {
+                return { valido: false, mensaje: `El porcentaje del responsable ${i + 1} no puede superar 200%` };
+            }
         }
 
-        if (responsable2 && responsable2.trim() !== '') {
-            if (porcentaje2 <= 0 || porcentaje2 > 100) {
-                return { valido: false, mensaje: 'El porcentaje del responsable 2 debe estar entre 0 y 100' };
-            }
-        } else {
-            // Si no hay responsable 2, el porcentaje 1 debe ser 100
-            if (Math.abs(porcentaje1 - 100) > 0.01) {
-                return { valido: false, mensaje: 'Sin responsable secundario, el porcentaje debe ser 100%' };
-            }
+        // Verificar nombres duplicados
+        const nombres = responsables.map(r => r.nombre);
+        const nombresDuplicados = nombres.filter((nombre, index) => nombres.indexOf(nombre) !== index);
+        if (nombresDuplicados.length > 0) {
+            return { valido: false, mensaje: 'No puede haber responsables duplicados' };
         }
 
         return { valido: true };
@@ -130,10 +218,11 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
 
             const payload = {
                 monto_total: montoTotal,
-                responsable_1: responsable1,
-                responsable_2: responsable2 || '',
-                porcentaje_1: porcentaje1 / 100,
-                porcentaje_2: (responsable2 && responsable2.trim() !== '') ? porcentaje2 / 100 : 0
+                responsables: responsables.map(r => ({
+                    nombre: r.nombre,
+                    porcentaje: r.porcentaje / 100, // Convertir a decimal
+                    comision: r.comision
+                }))
             };
 
             await axios.put(`${API_URL}/invoice/${facturaId}`, payload);
@@ -157,6 +246,11 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
             minimumFractionDigits: 2
         }).format(value || 0);
     };
+
+    const porcentajeTotal = calcularPorcentajeTotal();
+    const comisionTotal = calcularComisionTotal();
+    const comisionBase = montoActualizado * 0.01;
+    const porcentajeTotalReal = comisionBase > 0 ? (comisionTotal / comisionBase) * 100 : 0;
 
     if (!factura && !loading) return null;
 
@@ -263,163 +357,168 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
                                 💡 Comisión base (1% del monto actualizado)
                             </Typography>
                             <Typography variant="h6" fontWeight={700} color="info.900">
-                                {formatCurrency(montoActualizado * 0.01)}
+                                {formatCurrency(comisionBase)}
                             </Typography>
                         </Box>
+
+                        {/* Info sobre porcentajes independientes */}
+                        <Alert
+                            severity="info"
+                            icon={<InfoIcon />}
+                            sx={{ mb: 3, borderRadius: 2 }}
+                        >
+                            Los porcentajes son <strong>independientes</strong> y se calculan sobre el 1% base.
+                            Pueden sumar más de 100% (ej: Responsable 1: 70% + Responsable 2: 50% = 120% del 1% base).
+                        </Alert>
 
                         {/* Sección de Responsables */}
                         <Box sx={{ mb: 3 }}>
-                            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
-                                👥 Responsables y Comisiones
-                            </Typography>
-
-                            {/* Responsable 1 */}
-                            <Paper sx={{ p: 2, mb: 2, border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }} color="primary.main">
-                                    Responsable Principal
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                <Typography variant="subtitle1" fontWeight={700}>
+                                    👥 Responsables y Comisiones
                                 </Typography>
-                                <Grid container spacing={2}>
-                                    <Grid item xs={12} sm={7}>
-                                        <FormControl fullWidth>
-                                            <InputLabel>Nombre</InputLabel>
-                                            <Select
-                                                value={responsable1}
-                                                onChange={(e) => setResponsable1(e.target.value)}
-                                                label="Nombre"
-                                            >
-                                                <MenuItem value="">
-                                                    <em>Seleccionar...</em>
-                                                </MenuItem>
-                                                {listaResponsables.map((resp) => (
-                                                    <MenuItem key={resp.nombre} value={resp.nombre}>
-                                                        {resp.nombre}
+                                <Button
+                                    size="small"
+                                    startIcon={<AddIcon />}
+                                    onClick={agregarResponsable}
+                                    sx={{ textTransform: 'none' }}
+                                >
+                                    Agregar Responsable
+                                </Button>
+                            </Box>
+
+                            {responsables.map((responsable, index) => (
+                                <Paper
+                                    key={index}
+                                    sx={{
+                                        p: 2,
+                                        mb: 2,
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        position: 'relative'
+                                    }}
+                                >
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                        <Typography variant="subtitle2" fontWeight={600} color={index === 0 ? "primary.main" : "secondary.main"}>
+                                            {index === 0 ? 'Responsable Principal' : `Responsable ${index + 1}`}
+                                        </Typography>
+                                        {responsables.length > 1 && (
+                                            <Tooltip title="Eliminar responsable">
+                                                <IconButton
+                                                    size="small"
+                                                    color="error"
+                                                    onClick={() => eliminarResponsable(index)}
+                                                >
+                                                    <DeleteIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        )}
+                                    </Box>
+
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} sm={7}>
+                                            <FormControl fullWidth>
+                                                <InputLabel>Nombre</InputLabel>
+                                                <Select
+                                                    value={responsable.nombre}
+                                                    onChange={(e) => actualizarResponsable(index, 'nombre', e.target.value)}
+                                                    label="Nombre"
+                                                >
+                                                    <MenuItem value="">
+                                                        <em>Seleccionar...</em>
                                                     </MenuItem>
-                                                ))}
-                                            </Select>
-                                        </FormControl>
-                                    </Grid>
-                                    <Grid item xs={12} sm={5}>
-                                        <TextField
-                                            label="Porcentaje de comisión"
-                                            fullWidth
-                                            type="number"
-                                            value={porcentaje1}
-                                            onChange={(e) => setPorcentaje1(parseFloat(e.target.value) || 0)}
-                                            InputProps={{
-                                                endAdornment: (
-                                                    <InputAdornment position="end">
-                                                        <Typography>%</Typography>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                            inputProps={{
-                                                min: 0,
-                                                max: 100,
-                                                step: 1
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12}>
-                                        <Box sx={{ p: 1.5, bgcolor: 'success.50', borderRadius: 1 }}>
-                                            <Typography variant="caption" color="success.700">
-                                                Comisión calculada
-                                            </Typography>
-                                            <Typography variant="h6" fontWeight={700} color="success.900">
-                                                {formatCurrency(calcularComision(montoActualizado, porcentaje1))}
-                                            </Typography>
-                                        </Box>
-                                    </Grid>
-                                </Grid>
-                            </Paper>
-
-                            {/* Responsable 2 */}
-                            <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }} color="secondary.main">
-                                    Responsable Secundario
-                                </Typography>
-                                <Grid container spacing={2}>
-                                    <Grid item xs={12} sm={7}>
-                                        <FormControl fullWidth>
-                                            <InputLabel>Nombre</InputLabel>
-                                            <Select
-                                                value={responsable2}
-                                                onChange={(e) => setResponsable2(e.target.value)}
-                                                label="Nombre"
-                                            >
-                                                <MenuItem value="">
-                                                    <em>Ninguno</em>
-                                                </MenuItem>
-                                                {listaResponsables
-                                                    .map((resp) => (
-                                                        <MenuItem key={resp.nombre} value={resp.nombre}>
+                                                    {listaResponsables.map((resp) => (
+                                                        <MenuItem
+                                                            key={resp.nombre}
+                                                            value={resp.nombre}
+                                                            disabled={responsables.some((r, i) => i !== index && r.nombre === resp.nombre)}
+                                                        >
                                                             {resp.nombre}
                                                         </MenuItem>
                                                     ))}
-                                            </Select>
-                                        </FormControl>
-                                    </Grid>
-                                    <Grid item xs={12} sm={5}>
-                                        <TextField
-                                            label="Porcentaje de comisión"
-                                            fullWidth
-                                            type="number"
-                                            value={porcentaje2}
-                                            onChange={(e) => setPorcentaje2(parseFloat(e.target.value) || 0)}
-                                            disabled={!responsable2 || responsable2.trim() === ''}
-                                            InputProps={{
-                                                endAdornment: (
-                                                    <InputAdornment position="end">
-                                                        <Typography>%</Typography>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                            inputProps={{
-                                                min: 0,
-                                                max: 100,
-                                                step: 1
-                                            }}
-                                        />
-                                    </Grid>
-                                    {responsable2 && responsable2.trim() !== '' && (
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+                                        <Grid item xs={12} sm={5}>
+                                            <TextField
+                                                label="Porcentaje del 1% base"
+                                                fullWidth
+                                                type="number"
+                                                value={responsable.porcentaje}
+                                                onChange={(e) => actualizarResponsable(index, 'porcentaje', parseFloat(e.target.value) || 0)}
+                                                InputProps={{
+                                                    endAdornment: (
+                                                        <InputAdornment position="end">
+                                                            <Typography>%</Typography>
+                                                        </InputAdornment>
+                                                    )
+                                                }}
+                                                inputProps={{
+                                                    min: 0,
+                                                    max: 200,
+                                                    step: 0.1
+                                                }}
+                                                helperText="Puede superar 100%"
+                                            />
+                                        </Grid>
                                         <Grid item xs={12}>
                                             <Box sx={{ p: 1.5, bgcolor: 'success.50', borderRadius: 1 }}>
                                                 <Typography variant="caption" color="success.700">
-                                                    Comisión calculada
+                                                    Comisión calculada ({responsable.porcentaje}% de {formatCurrency(comisionBase)})
                                                 </Typography>
                                                 <Typography variant="h6" fontWeight={700} color="success.900">
-                                                    {formatCurrency(calcularComision(montoActualizado, porcentaje2))}
+                                                    {formatCurrency(responsable.comision)}
                                                 </Typography>
                                             </Box>
                                         </Grid>
-                                    )}
-                                </Grid>
-                            </Paper>
+                                    </Grid>
+                                </Paper>
+                            ))}
                         </Box>
 
                         {/* Resumen de porcentajes */}
-                        {responsable2 && responsable2.trim() !== '' && (
-                            <Alert
-                                severity={Math.abs((porcentaje1 + porcentaje2) - 100) < 0.01 ? 'success' : 'warning'}
-                                sx={{ borderRadius: 2 }}
-                            >
-                                Total de porcentajes: <strong>{(porcentaje1 + porcentaje2).toFixed(2)}%</strong>
-                                {Math.abs((porcentaje1 + porcentaje2) - 100) < 0.01
-                                    ? ' ✓ Correcto'
-                                    : ' ⚠️ Debe sumar 100%'}
-                            </Alert>
-                        )}
+                        <Alert
+                            severity={porcentajeTotal <= 100 ? 'info' : 'warning'}
+                            sx={{ borderRadius: 2, mb: 3 }}
+                        >
+                            <Stack spacing={0.5}>
+                                <Box>
+                                    <strong>Suma de porcentajes:</strong> {porcentajeTotal.toFixed(1)}%
+                                </Box>
+                                <Box>
+                                    <strong>Porcentaje real del monto:</strong> {porcentajeTotalReal.toFixed(2)}%
+                                    {porcentajeTotalReal > 1 && ' (Supera el 1% base) ⚠️'}
+                                </Box>
+                            </Stack>
+                        </Alert>
 
                         {/* Resumen total */}
-                        <Box sx={{ mt: 3, p: 2, bgcolor: 'primary.50', borderRadius: 2, border: '2px solid', borderColor: 'primary.200' }}>
-                            <Typography variant="subtitle2" fontWeight={700} color="primary.main" sx={{ mb: 1 }}>
-                                Comisión Total
-                            </Typography>
-                            <Typography variant="h5" fontWeight={700} color="primary.dark">
-                                {formatCurrency(
-                                    calcularComision(montoActualizado, porcentaje1) +
-                                    (responsable2 && responsable2.trim() !== '' ? calcularComision(montoActualizado, porcentaje2) : 0)
-                                )}
-                            </Typography>
+                        <Box sx={{ p: 2, bgcolor: 'primary.50', borderRadius: 2, border: '2px solid', borderColor: 'primary.200' }}>
+                            <Grid container spacing={2}>
+                                <Grid item xs={6}>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Comisión base (1%)
+                                    </Typography>
+                                    <Typography variant="h6" fontWeight={600} color="text.secondary">
+                                        {formatCurrency(comisionBase)}
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <Typography variant="caption" color="primary.main" fontWeight={700}>
+                                        Comisión Total a Pagar
+                                    </Typography>
+                                    <Typography variant="h5" fontWeight={700} color="primary.dark">
+                                        {formatCurrency(comisionTotal)}
+                                    </Typography>
+                                </Grid>
+                            </Grid>
+
+                            {comisionTotal > comisionBase && (
+                                <Alert severity="warning" sx={{ mt: 2 }}>
+                                    La comisión total ({formatCurrency(comisionTotal)}) supera el 1% base ({formatCurrency(comisionBase)})
+                                    en {formatCurrency(comisionTotal - comisionBase)} ({((comisionTotal / comisionBase - 1) * 100).toFixed(1)}% más)
+                                </Alert>
+                            )}
                         </Box>
                     </>
                 ) : null}

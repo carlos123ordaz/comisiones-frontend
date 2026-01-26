@@ -134,7 +134,6 @@ const UserDashboard = () => {
         }
     }, [userSelected, trimestreSelected, selectedYear]);
 
-    // Función para descargar reporte por usuario
     const handleDownloadUserReport = async () => {
         if (!userSelected) return;
 
@@ -223,8 +222,21 @@ const UserDashboard = () => {
         });
     };
 
-    const getProductoMesData = () => {
+    // ============================================================================
+    // NUEVA FUNCIÓN: Filtrar productos positivos para gráficos
+    // ============================================================================
+    const getProductosPositivos = () => {
         if (!resume || !resume.productos || !Array.isArray(resume.productos)) return [];
+
+        // Filtrar solo productos con total positivo
+        return resume.productos.filter(producto => (producto['Total'] || 0) > 0);
+    };
+
+    const getProductoMesData = () => {
+        // Usar productos filtrados (solo positivos) para el gráfico
+        const productosPositivos = getProductosPositivos();
+
+        if (productosPositivos.length === 0) return [];
 
         const trimestreMeses = {
             '1': { 1: 'enero', 2: 'febrero', 3: 'marzo' },
@@ -240,9 +252,12 @@ const UserDashboard = () => {
             const mesNum = mesesNums[idx];
             const dataPoint = { mes: nombreMes };
 
-            resume.productos.forEach(producto => {
+            // Solo usar productos positivos
+            productosPositivos.forEach(producto => {
                 const productoNombre = producto['Producto'];
-                dataPoint[productoNombre] = (producto[mesNum] || 0) / 1000;
+                const valorMes = producto[mesNum] || 0;
+                // Solo agregar si el valor del mes también es positivo
+                dataPoint[productoNombre] = valorMes > 0 ? valorMes / 1000 : 0;
             });
 
             return dataPoint;
@@ -252,14 +267,17 @@ const UserDashboard = () => {
     };
 
     const getProductoColors = () => {
-        if (!resume || !resume.productos || !Array.isArray(resume.productos)) return [];
+        // Usar productos filtrados (solo positivos) para los colores
+        const productosPositivos = getProductosPositivos();
+
+        if (productosPositivos.length === 0) return [];
 
         const colors = [
             '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
             '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'
         ];
 
-        return resume.productos.map((_, idx) => colors[idx % colors.length]);
+        return productosPositivos.map((_, idx) => colors[idx % colors.length]);
     };
 
     const getGaugeData = () => {
@@ -379,10 +397,14 @@ const UserDashboard = () => {
     const monthlyData = getMonthlyData();
     const productoMesData = getProductoMesData();
     const productoColors = getProductoColors();
+    const productosPositivos = getProductosPositivos(); // Para usar en el gráfico
     const gaugeInfo = getGaugeData();
+
+    // Total amount usa TODOS los productos (incluyendo negativos)
     const totalAmount = resume?.productos
         ? resume.productos.reduce((sum, p) => sum + (p['Total'] || 0), 0)
         : 0;
+
     const esUNAU = tipoVista === 'UNAU';
 
     return (
@@ -560,29 +582,39 @@ const UserDashboard = () => {
                                 </Typography>
                             </Box>
 
-                            {/* Top 5 productos */}
+                            {/* Top 5 productos - Muestra TODOS los productos (incluyendo negativos) */}
                             {resume?.productos && resume.productos.length > 0 && (
                                 <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #e2e8f0' }}>
                                     <Typography variant="body2" sx={{ color: '#3b82f6', fontSize: '0.875rem', fontWeight: 600, mb: 2 }}>
                                         📦 Top Productos
                                     </Typography>
-                                    {resume.productos.slice(0, 5).map((producto, idx) => (
-                                        <Box key={idx} sx={{ mb: 2 }}>
-                                            <Typography variant="body2" sx={{
-                                                color: '#64748b',
-                                                fontSize: '0.7rem',
-                                                mb: 0.3,
-                                                whiteSpace: 'nowrap',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis'
-                                            }}>
-                                                {idx + 1}. {producto['Producto']}
-                                            </Typography>
-                                            <Typography variant="body1" sx={{ fontWeight: 600, color: '#0f172a', fontSize: '0.9rem' }}>
-                                                {(producto['Total'] || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                            </Typography>
-                                        </Box>
-                                    ))}
+                                    {resume.productos.slice(0, 5).map((producto, idx) => {
+                                        const total = producto['Total'] || 0;
+                                        const esNegativo = total < 0;
+
+                                        return (
+                                            <Box key={idx} sx={{ mb: 2 }}>
+                                                <Typography variant="body2" sx={{
+                                                    color: '#64748b',
+                                                    fontSize: '0.7rem',
+                                                    mb: 0.3,
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis'
+                                                }}>
+                                                    {idx + 1}. {producto['Producto']}
+                                                    {esNegativo && ' ⚠️'}
+                                                </Typography>
+                                                <Typography variant="body1" sx={{
+                                                    fontWeight: 600,
+                                                    color: esNegativo ? '#ef4444' : '#0f172a',
+                                                    fontSize: '0.9rem'
+                                                }}>
+                                                    {total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                                </Typography>
+                                            </Box>
+                                        );
+                                    })}
                                 </Box>
                             )}
 
@@ -612,7 +644,7 @@ const UserDashboard = () => {
                             <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#0f172a', fontSize: '1rem' }}>
                                 Ventas por Producto y Mes (en miles) - {selectedYear}
                             </Typography>
-                            {productoMesData.length > 0 && resume?.productos ? (
+                            {productoMesData.length > 0 && productosPositivos.length > 0 ? (
                                 <ResponsiveContainer width="100%" height={400}>
                                     <BarChart data={productoMesData}>
                                         <CartesianGrid
@@ -650,7 +682,8 @@ const UserDashboard = () => {
                                             formatter={(value) => `${(value * 1000).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`}
                                         />
                                         <Legend />
-                                        {resume.productos.map((producto, idx) => (
+                                        {/* Usar solo productos positivos en el gráfico */}
+                                        {productosPositivos.map((producto, idx) => (
                                             <Bar
                                                 key={idx}
                                                 dataKey={producto['Producto']}
@@ -857,7 +890,7 @@ const UserDashboard = () => {
                 )}
             </Box>
 
-            {/* Diálogo de descarga exitosa */}
+            {/* Diálogo de descarga exitosa (sin cambios) */}
             <Dialog
                 open={downloadDialog.open}
                 onClose={handleCloseDownloadDialog}

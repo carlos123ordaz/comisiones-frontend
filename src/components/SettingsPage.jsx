@@ -69,6 +69,7 @@ export const SettingsPage = () => {
     const [loading, setLoading] = useState(true);
     const [openDialog, setOpenDialog] = useState(false);
     const [editingVendedor, setEditingVendedor] = useState(null);
+    const [isSaving, setIsSaving] = useState(false);
     const [formData, setFormData] = useState({
         nombre: '',
         meta_mensual: '',
@@ -165,6 +166,7 @@ export const SettingsPage = () => {
 
     const handleSave = async () => {
         try {
+            setIsSaving(true);
             if (editingVendedor) {
                 // Actualizar
                 await axios.put(
@@ -195,6 +197,8 @@ export const SettingsPage = () => {
                 'error'
             );
             console.error('Error:', error);
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -612,14 +616,14 @@ export const SettingsPage = () => {
                         onClick={handleSave}
                         variant="contained"
                         startIcon={<SaveIcon />}
-                        disabled={!formData.nombre || !formData.meta_mensual || !formData.porcentaje_umbral}
+                        disabled={!formData.nombre || !formData.meta_mensual || !formData.porcentaje_umbral || isSaving}
                         sx={{
                             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                             textTransform: 'none',
                             fontWeight: 600
                         }}
                     >
-                        {editingVendedor ? 'Actualizar' : 'Crear'}
+                        {isSaving ? 'Guardando...' : (editingVendedor ? 'Actualizar' : 'Crear')}
                     </Button>
                 </DialogActions>
             </Dialog>

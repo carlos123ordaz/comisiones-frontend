@@ -73,7 +73,6 @@ async fn fetch_ventas_from_db() -> Result<Vec<VentaRecord>, String> {
           AND c.Cd_TDI != '01'
         ORDER BY v.FecMov ASC
     ";
-
     let stream = client
         .query(query, &[])
         .await
@@ -122,3 +121,5 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+// I put all my needs en hands of you
