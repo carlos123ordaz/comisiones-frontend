@@ -42,9 +42,14 @@ export const AdminPage = () => {
         setDownloading(true);
         try {
             const response = await axios.get(`${URI_API}/invoices/export_report`, {
-                responseType: 'blob'
+                responseType: 'blob',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                },
             });
-
+            console.log('Respuesta de la API:', response);
             const timestamp = moment().format('YYYYMMDD_HHmmss');
             const fileName = `reporte_invoices_${timestamp}.xlsx`;
 

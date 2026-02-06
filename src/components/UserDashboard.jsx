@@ -143,7 +143,12 @@ const UserDashboard = () => {
                 `${API_BASE_URL}/invoices/execute_report_by_user`,
                 {
                     params: { name_user: userSelected },
-                    responseType: 'blob'
+                    responseType: 'blob',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache',
+                        'Expires': '0',
+                    },
                 }
             );
 
