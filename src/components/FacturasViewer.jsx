@@ -24,6 +24,7 @@ import {
     Stack,
     Collapse
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
     Search as SearchIcon,
     Clear as ClearIcon,
@@ -36,6 +37,7 @@ import axios from 'axios';
 import { EditFacturaDialog } from './EditFacturaDialog';
 
 import { URI_API } from '../config/api';
+import { colorTokens } from '../theme';
 const API_URL = URI_API;
 
 export const FacturasViewer = () => {
@@ -386,8 +388,8 @@ export const FacturasViewer = () => {
                                                         sx={{
                                                             fontSize: '0.7rem',
                                                             height: 22,
-                                                            bgcolor: factura.producto === 'Endress' ? 'primary.50' : 'grey.100',
-                                                            color: factura.producto === 'Endress' ? 'primary.700' : 'text.secondary'
+                                                            bgcolor: factura.producto === 'Endress' ? alpha(colorTokens.action, 0.12) : alpha(colorTokens.border, 0.45),
+                                                            color: factura.producto === 'Endress' ? colorTokens.action : colorTokens.textSecondary
                                                         }}
                                                     />
                                                 </TableCell>
@@ -407,8 +409,8 @@ export const FacturasViewer = () => {
                                                                     sx={{
                                                                         fontSize: '0.65rem',
                                                                         height: 18,
-                                                                        bgcolor: 'primary.50',
-                                                                        color: 'primary.700'
+                                                                        bgcolor: alpha(colorTokens.accentTeal, 0.12),
+                                                                        color: colorTokens.accentTeal
                                                                     }}
                                                                 />
                                                             </Box>
@@ -439,7 +441,7 @@ export const FacturasViewer = () => {
                                                 </TableCell>
 
                                                 <TableCell align="right">
-                                                    <Typography variant="body2" fontSize="0.8rem" color="success.main" fontWeight={600}>
+                                                    <Typography variant="body2" fontSize="0.8rem" sx={{ color: colorTokens.accentTeal }} fontWeight={600}>
                                                         {formatCurrency(comisionTotal)}
                                                     </Typography>
                                                 </TableCell>
@@ -485,7 +487,7 @@ export const FacturasViewer = () => {
                                                         }}
                                                     >
                                                         <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                                                            <Box sx={{ py: 2, px: 3, bgcolor: 'grey.50' }}>
+                                                            <Box sx={{ py: 2, px: 3, bgcolor: 'background.default' }}>
                                                                 <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
                                                                     Distribución de Comisiones:
                                                                 </Typography>
@@ -516,15 +518,15 @@ export const FacturasViewer = () => {
                                                                                     sx={{
                                                                                         fontSize: '0.7rem',
                                                                                         height: 20,
-                                                                                        bgcolor: idx === 0 ? 'primary.50' : 'secondary.50',
-                                                                                        color: idx === 0 ? 'primary.700' : 'secondary.700'
+                                                                                        bgcolor: idx === 0 ? alpha(colorTokens.action, 0.12) : alpha(colorTokens.accentTeal, 0.12),
+                                                                                        color: idx === 0 ? colorTokens.action : colorTokens.accentTeal
                                                                                     }}
                                                                                 />
                                                                             </Box>
                                                                             <Typography
                                                                                 variant="body2"
                                                                                 fontWeight={700}
-                                                                                color="success.main"
+                                                                                sx={{ color: colorTokens.accentTeal }}
                                                                             >
                                                                                 {formatCurrency(resp.comision)}
                                                                             </Typography>

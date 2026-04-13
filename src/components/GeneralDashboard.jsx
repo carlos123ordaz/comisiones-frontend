@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Typography,
@@ -12,20 +12,31 @@ import {
   Select,
   MenuItem,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Stack
 } from '@mui/material';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { alpha } from '@mui/material/styles';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
 
 import { URI_API } from '../config/api';
+import { chartColors, colorTokens } from '../theme';
+
 const API_URL = URI_API;
+
+const cardSx = { p: 3, borderRadius: 3, height: '100%' };
+const chartGrid = { strokeDasharray: '3 3', stroke: colorTokens.border, vertical: false };
+const axisStyle = { stroke: colorTokens.textSecondary, axisLine: false, tickLine: false, style: { fontSize: '0.75rem' } };
+const tooltipStyle = {
+  backgroundColor: colorTokens.surface,
+  border: `1px solid ${colorTokens.border}`,
+  borderRadius: '10px'
+};
 
 const GeneralDashboard = () => {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Opciones de filtros disponibles
   const [availableFilters, setAvailableFilters] = useState({
     responsables: [],
     productos: [],
@@ -37,46 +48,21 @@ const GeneralDashboard = () => {
   const [selectedName, setSelectedName] = useState('Todas');
   const [dateRange, setDateRange] = useState(1);
   const [selectedYear, setSelectedYear] = useState(2025);
+  const hasInitialized = useRef(false);
 
-  const colors = [
-    '#1e3a8a', '#2563eb', '#3b82f6', '#60a5fa',
-    '#93c5fd', '#dbeafe', '#96c024ff', '#108b71ff', '#b1951bff'
-  ];
-
-  const loadFilterOptions = async () => {
+  const loadInvoices = async ({ silent = false } = {}) => {
     try {
-      const response = await axios.get(`${API_URL}/invoices/filtros`);
-      setAvailableFilters({
-        responsables: ['Todas', ...response.data.responsables],
-        productos: ['Todas', ...response.data.productos],
-        trimestres: [1, 2, 3, 4],
-        anios: response.data.anios
-      });
-    } catch (error) {
-      console.error('Error cargando filtros:', error);
-    }
-  };
-
-  const loadInvoices = async () => {
-    try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       const params = new URLSearchParams();
-      if (selectedPerson !== 'Todas') {
-        params.append('responsable', selectedPerson);
-      }
-      if (selectedName !== 'Todas') {
-        params.append('producto', selectedName);
-      }
+      if (selectedPerson !== 'Todas') params.append('responsable', selectedPerson);
+      if (selectedName !== 'Todas') params.append('producto', selectedName);
       params.append('trimestre', dateRange);
       params.append('anio', selectedYear);
-      const response = await axios.get(
-        `${API_URL}/invoices/dashboard?${params.toString()}`
-      );
-      console.log('178')
+      const response = await axios.get(`${API_URL}/invoices/dashboard?${params.toString()}`);
       setInvoices(response.data);
-    } catch (error) {
-      console.error('Error cargando facturas:', error);
+    } catch (loadError) {
+      console.error('Error cargando facturas:', loadError);
       setError('Error al cargar las facturas. Por favor, intenta de nuevo.');
       setInvoices([]);
     } finally {
@@ -85,66 +71,81 @@ const GeneralDashboard = () => {
   };
 
   useEffect(() => {
-    loadFilterOptions();
+    let cancelled = false;
+
+    const initializeDashboard = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const [filtersResponse, invoicesResponse] = await Promise.all([
+          axios.get(`${API_URL}/invoices/filtros`),
+          axios.get(`${API_URL}/invoices/dashboard?trimestre=${dateRange}&anio=${selectedYear}`)
+        ]);
+
+        if (cancelled) return;
+
+        setAvailableFilters({
+          responsables: ['Todas', ...filtersResponse.data.responsables],
+          productos: ['Todas', ...filtersResponse.data.productos],
+          trimestres: [1, 2, 3, 4],
+          anios: filtersResponse.data.anios
+        });
+        setInvoices(invoicesResponse.data);
+        hasInitialized.current = true;
+      } catch (loadError) {
+        if (cancelled) return;
+        console.error('Error inicializando dashboard general:', loadError);
+        setError('Error al cargar la informaciÃ³n general.');
+        setInvoices([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    initializeDashboard();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (availableFilters.responsables.length > 0) {
-      loadInvoices();
-    }
-  }, [selectedPerson, selectedName, dateRange, selectedYear, availableFilters]);
+    if (!hasInitialized.current) return;
+    loadInvoices({ silent: false });
+  }, [selectedPerson, selectedName, dateRange, selectedYear]);
 
   const monthlyData = useMemo(() => {
-    const monthNames = [
-      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
-    ];
-
+    const monthNames = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
     const monthlyTotals = {};
 
-    invoices.forEach(inv => {
+    invoices.forEach((inv) => {
       const month = inv.mes;
       if (month >= 1 && month <= 12) {
         const monthName = monthNames[month - 1];
-        if (!monthlyTotals[monthName]) {
-          monthlyTotals[monthName] = 0;
-        }
-        monthlyTotals[monthName] += inv['monto_total'] || 0;
+        monthlyTotals[monthName] = (monthlyTotals[monthName] || 0) + (inv.monto_total || 0);
       }
     });
 
     return Object.entries(monthlyTotals)
-      .map(([mes, total]) => ({
-        mes,
-        total: total / 1000000
-      }))
+      .map(([mes, total]) => ({ mes, total: total / 1000000 }))
       .sort((a, b) => monthNames.indexOf(a.mes) - monthNames.indexOf(b.mes));
   }, [invoices]);
 
   const detailedMonthlyData = useMemo(() => {
-    const monthNames = [
-      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
-    ];
-
+    const monthNames = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
     const monthlyProductTotals = {};
 
-    invoices.forEach(inv => {
+    invoices.forEach((inv) => {
       const month = inv.mes;
-      const producto = inv['producto'];
-
+      const producto = inv.producto;
       if (month >= 1 && month <= 12) {
         const monthName = monthNames[month - 1];
-
-        if (!monthlyProductTotals[monthName]) {
-          monthlyProductTotals[monthName] = {};
-        }
-        if (!monthlyProductTotals[monthName][producto]) {
-          monthlyProductTotals[monthName][producto] = 0;
-        }
-        monthlyProductTotals[monthName][producto] += inv['monto_total'] || 0;
+        monthlyProductTotals[monthName] ??= {};
+        monthlyProductTotals[monthName][producto] = (monthlyProductTotals[monthName][producto] || 0) + (inv.monto_total || 0);
       }
     });
+
     return Object.entries(monthlyProductTotals)
       .map(([mes, productos]) => {
         const data = { mes };
@@ -158,8 +159,8 @@ const GeneralDashboard = () => {
 
   const uniqueProducts = useMemo(() => {
     const products = new Set();
-    invoices.forEach(inv => {
-      const producto = inv['producto'] || 'Sin Producto';
+    invoices.forEach((inv) => {
+      const producto = inv.producto || 'Sin Producto';
       if (producto !== 0) products.add(producto);
     });
     return Array.from(products);
@@ -167,114 +168,71 @@ const GeneralDashboard = () => {
 
   const summaryData = useMemo(() => {
     const summary = {};
-
-    invoices.forEach(inv => {
-      const key = inv['producto'];
-      if (!summary[key]) {
-        summary[key] = 0;
-      }
-      summary[key] += inv['monto_total'] || 0;
+    invoices.forEach((inv) => {
+      summary[inv.producto] = (summary[inv.producto] || 0) + (inv.monto_total || 0);
     });
 
     return Object.entries(summary)
-      .map(([name, total], index) => ({
-        name,
-        total,
-        color: colors[index % colors.length]
-      }))
+      .map(([name, total], index) => ({ name, total, color: chartColors[index % chartColors.length] }))
       .sort((a, b) => b.total - a.total);
   }, [invoices]);
 
-  const totalGeneral = useMemo(() => {
-    return invoices.reduce((sum, inv) => sum + (inv['monto_total'] || 0), 0);
-  }, [invoices]);
+  const totalGeneral = useMemo(() => invoices.reduce((sum, inv) => sum + (inv.monto_total || 0), 0), [invoices]);
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-        <CircularProgress size={60} />
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <CircularProgress size={56} />
       </Box>
     );
   }
 
   if (error) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error">{error}</Alert>
-      </Box>
-    );
+    return <Box sx={{ p: 3 }}><Alert severity="error">{error}</Alert></Box>;
   }
 
   return (
-    <Box sx={{
-      p: 3,
-      bgcolor: '#f8fafc',
-      minHeight: '100vh',
-      fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
-    }}>
-      {/* Filtros */}
-      <Paper sx={{ p: 2, mb: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+    <Box sx={{ p: { xs: 2, md: 4 }, bgcolor: 'background.default', minHeight: '100vh' }}>
+      <Stack spacing={0.75} sx={{ mb: 3 }}>
+        <Typography variant="h5" sx={{ color: colorTokens.brand }}>
+          Dashboard General
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Vista consolidada por responsable, producto y periodo.
+        </Typography>
+      </Stack>
+
+      <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
         <Grid container spacing={2}>
-          <Grid size={{ xs: 12, sm: 3 }}>
-            <Typography variant="caption" sx={{ color: '#64748b', mb: 0.5, display: 'block' }}>
-              Responsable
-            </Typography>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.75, display: 'block', fontWeight: 600 }}>Responsable</Typography>
             <FormControl fullWidth size="small">
-              <Select
-                value={selectedPerson}
-                onChange={(e) => setSelectedPerson(e.target.value)}
-              >
-                {availableFilters.responsables.map(resp => (
-                  <MenuItem key={resp} value={resp}>{resp}</MenuItem>
-                ))}
+              <Select value={selectedPerson} onChange={(e) => setSelectedPerson(e.target.value)}>
+                {availableFilters.responsables.map((resp) => <MenuItem key={resp} value={resp}>{resp}</MenuItem>)}
               </Select>
             </FormControl>
           </Grid>
-
-          <Grid size={{ xs: 12, sm: 3 }}>
-            <Typography variant="caption" sx={{ color: '#64748b', mb: 0.5, display: 'block' }}>
-              Producto
-            </Typography>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.75, display: 'block', fontWeight: 600 }}>Producto</Typography>
             <FormControl fullWidth size="small">
-              <Select
-                value={selectedName}
-                onChange={(e) => setSelectedName(e.target.value)}
-              >
-                {availableFilters.productos.map(prod => (
-                  <MenuItem key={prod} value={prod}>{prod}</MenuItem>
-                ))}
+              <Select value={selectedName} onChange={(e) => setSelectedName(e.target.value)}>
+                {availableFilters.productos.map((prod) => <MenuItem key={prod} value={prod}>{prod}</MenuItem>)}
               </Select>
             </FormControl>
           </Grid>
-
-          <Grid size={{ xs: 12, sm: 3 }}>
-            <Typography variant="caption" sx={{ color: '#64748b', mb: 0.5, display: 'block' }}>
-              Trimestre
-            </Typography>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.75, display: 'block', fontWeight: 600 }}>Trimestre</Typography>
             <FormControl fullWidth size="small">
-              <Select
-                value={dateRange}
-                onChange={(e) => setDateRange(e.target.value)}
-              >
-                {availableFilters.trimestres.map(q => (
-                  <MenuItem key={q} value={q}>Q{q}</MenuItem>
-                ))}
+              <Select value={dateRange} onChange={(e) => setDateRange(e.target.value)}>
+                {availableFilters.trimestres.map((q) => <MenuItem key={q} value={q}>Q{q}</MenuItem>)}
               </Select>
             </FormControl>
           </Grid>
-
-          <Grid size={{ xs: 12, sm: 3 }}>
-            <Typography variant="caption" sx={{ color: '#64748b', mb: 0.5, display: 'block' }}>
-              Año
-            </Typography>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.75, display: 'block', fontWeight: 600 }}>AÃ±o</Typography>
             <FormControl fullWidth size="small">
-              <Select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
-              >
-                {availableFilters.anios.map(year => (
-                  <MenuItem key={year} value={year}>{year}</MenuItem>
-                ))}
+              <Select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
+                {availableFilters.anios.map((year) => <MenuItem key={year} value={year}>{year}</MenuItem>)}
               </Select>
             </FormControl>
           </Grid>
@@ -282,134 +240,82 @@ const GeneralDashboard = () => {
       </Paper>
 
       {invoices.length === 0 ? (
-        <Alert severity="warning">
-          No se encontraron facturas con los filtros seleccionados.
-        </Alert>
+        <Alert severity="warning">No se encontraron facturas con los filtros seleccionados.</Alert>
       ) : (
         <Grid container spacing={3}>
-          {/* Panel de resumen */}
-          <Grid size={{ xs: 12, sm: 3 }}>
-            <Paper sx={{ p: 2, height: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-              <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#0f172a' }}>
-                Total
+          <Grid size={{ xs: 12, lg: 3.5 }}>
+            <Paper sx={cardSx}>
+              <Typography variant="overline" sx={{ color: colorTokens.info, fontWeight: 700 }}>
+                Resumen
+              </Typography>
+              <Typography variant="h3" sx={{ color: colorTokens.brand, mt: 1 }}>
+                ${(totalGeneral / 1000000).toFixed(2)}M
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Monto total acumulado
               </Typography>
 
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="h3" sx={{
-                  fontWeight: 700,
-                  color: '#0f172a',
-                  mb: 0.5
-                }}>
-                  ${(totalGeneral / 1000000).toFixed(2)}M
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#64748b' }}>
-                  Millones USD
-                </Typography>
-              </Box>
-
-              <Box sx={{ maxHeight: 600, overflowY: 'auto' }}>
-                <List sx={{ p: 0 }}>
-                  {summaryData.map((item, index) => (
-                    <ListItem
-                      key={index}
-                      sx={{
-                        px: 0,
-                        py: 1.5,
-                        borderBottom: index < summaryData.length - 1 ? '1px solid #e2e8f0' : 'none'
-                      }}
-                    >
-                      <Box sx={{
-                        width: 4,
-                        height: 24,
-                        bgcolor: item.color,
-                        mr: 2,
-                        borderRadius: 1
-                      }} />
-                      <ListItemText
-                        primary={
-                          <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>
-                            {item.name}
-                          </Typography>
-                        }
-                        secondary={
-                          <Typography variant="caption" sx={{ color: '#64748b' }}>
-                            ${item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                          </Typography>
-                        }
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
+              <List sx={{ p: 0 }}>
+                {summaryData.map((item, index) => (
+                  <ListItem key={index} sx={{ px: 0, py: 1.25, borderBottom: index < summaryData.length - 1 ? `1px solid ${colorTokens.border}` : 'none' }}>
+                    <Box sx={{ width: 8, height: 32, mr: 2, borderRadius: 1, bgcolor: item.color }} />
+                    <ListItemText
+                      primary={<Typography variant="body2" sx={{ fontWeight: 600 }}>{item.name}</Typography>}
+                      secondary={<Typography variant="caption" color="text.secondary">${item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</Typography>}
+                    />
+                  </ListItem>
+                ))}
+              </List>
             </Paper>
           </Grid>
 
-          {/* Gráficos */}
-          <Grid size={{ xs: 12, sm: 9 }}>
-            <Paper sx={{ p: 3, mb: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-              <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#0f172a' }}>
-                Total por Mes
-              </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={monthlyData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="mes" stroke="#64748b" />
-                  <YAxis stroke="#64748b" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#fff',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '8px'
-                    }}
-                    formatter={(value) => `$${value.toFixed(2)}M`}
-                  />
-                  <Bar dataKey="total" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </Paper>
+          <Grid size={{ xs: 12, lg: 8.5 }}>
+            <Stack spacing={3}>
+              <Paper sx={cardSx}>
+                <Typography variant="h6" sx={{ color: colorTokens.brand, mb: 3 }}>
+                  Total por Mes
+                </Typography>
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={monthlyData}>
+                    <CartesianGrid {...chartGrid} />
+                    <XAxis dataKey="mes" {...axisStyle} />
+                    <YAxis {...axisStyle} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(value) => `$${value.toFixed(2)}M`} />
+                    <Bar dataKey="total" fill={colorTokens.action} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Paper>
 
-            <Paper sx={{ p: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-              <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, color: '#0f172a' }}>
-                Total por Mes y Producto
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-                {uniqueProducts.map((name, idx) => (
-                  <Chip
-                    key={name}
-                    label={name}
-                    size="small"
-                    sx={{
-                      bgcolor: colors[idx % colors.length],
-                      color: 'white',
-                      fontWeight: 500
-                    }}
-                  />
-                ))}
-              </Box>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={detailedMonthlyData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="mes" stroke="#64748b" />
-                  <YAxis stroke="#64748b" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#fff',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '8px'
-                    }}
-                    formatter={(value) => `$${value.toFixed(2)}M`}
-                  />
-                  {uniqueProducts.map((product, idx) => (
-                    <Bar
-                      key={product}
-                      dataKey={product}
-                      stackId="a"
-                      fill={colors[idx % colors.length]}
+              <Paper sx={cardSx}>
+                <Typography variant="h6" sx={{ color: colorTokens.brand, mb: 1.5 }}>
+                  Total por Mes y Producto
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2.5 }}>
+                  {uniqueProducts.map((name, idx) => (
+                    <Chip
+                      key={name}
+                      label={name}
+                      size="small"
+                      sx={{
+                        bgcolor: alpha(chartColors[idx % chartColors.length], 0.12),
+                        color: chartColors[idx % chartColors.length],
+                      }}
                     />
                   ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </Paper>
+                </Box>
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={detailedMonthlyData}>
+                    <CartesianGrid {...chartGrid} />
+                    <XAxis dataKey="mes" {...axisStyle} />
+                    <YAxis {...axisStyle} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(value) => `$${value.toFixed(2)}M`} />
+                    {uniqueProducts.map((product, idx) => (
+                      <Bar key={product} dataKey={product} stackId="a" fill={chartColors[idx % chartColors.length]} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </Paper>
+            </Stack>
           </Grid>
         </Grid>
       )}

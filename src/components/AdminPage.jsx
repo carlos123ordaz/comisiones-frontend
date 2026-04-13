@@ -8,7 +8,9 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import axios from 'axios';
 import moment from 'moment';
+import { alpha } from '@mui/material/styles';
 import { URI_API } from '../config/api';
+import { colorTokens } from '../theme';
 
 export const AdminPage = () => {
     const navigate = useNavigate();
@@ -104,14 +106,13 @@ export const AdminPage = () => {
 
     return (
         <>
-            <Box sx={{ display: 'flex', height: '100vh', bgcolor: '#f8f9fa', overflow: 'hidden' }}>
+            <Box sx={{ display: 'flex', height: '100vh', bgcolor: 'background.default', overflow: 'hidden' }}>
                 <Paper
-                    elevation={0}
                     sx={{
                         width: 280,
-                        borderRight: '1px solid',
-                        borderColor: 'divider',
-                        bgcolor: 'white',
+                        borderRight: `1px solid ${alpha(colorTokens.surface, 0.08)}`,
+                        bgcolor: colorTokens.brand,
+                        color: '#fff',
                         display: 'flex',
                         flexDirection: 'column',
                         position: 'sticky',
@@ -122,14 +123,14 @@ export const AdminPage = () => {
                 >
                     {/* Logo/Header */}
                     <Box sx={{ p: 3, pb: 2 }}>
-                        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+                        <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#fff' }}>
                             Dashboard
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                        <Typography variant="caption" sx={{ mt: 0.5, display: 'block', color: alpha(colorTokens.surface, 0.72) }}>
                             Panel de administración
                         </Typography>
                         {user && (
-                            <Typography variant="caption" sx={{ mt: 1, display: 'block', color: '#3b82f6', fontWeight: 600 }}>
+                            <Typography variant="caption" sx={{ mt: 1, display: 'block', color: '#fff', fontWeight: 600 }}>
                                 👤 {user.nombre}
                             </Typography>
                         )}
@@ -146,19 +147,14 @@ export const AdminPage = () => {
                             onClick={handleDownloadReport}
                             disabled={downloading}
                             sx={{
-                                borderRadius: 2,
-                                textTransform: 'none',
-                                fontWeight: 600,
                                 py: 1.5,
-                                bgcolor: '#10b981',
-                                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)',
+                                bgcolor: colorTokens.action,
                                 '&:hover': {
-                                    bgcolor: '#059669',
-                                    boxShadow: '0 4px 8px rgba(16, 185, 129, 0.3)',
+                                    bgcolor: colorTokens.support,
                                 },
                                 '&:disabled': {
-                                    bgcolor: '#d1d5db',
-                                    color: '#9ca3af',
+                                    bgcolor: alpha(colorTokens.surface, 0.18),
+                                    color: alpha(colorTokens.surface, 0.54),
                                 }
                             }}
                         >
@@ -178,9 +174,16 @@ export const AdminPage = () => {
                                     sx={{
                                         borderRadius: 2,
                                         py: 1.5,
+                                        color: alpha(colorTokens.surface, 0.72),
                                         '&.Mui-selected': {
-                                            background: '#667eea',
+                                            background: alpha(colorTokens.support, 0.22),
                                             color: 'white',
+                                        },
+                                        '&.Mui-selected:hover': {
+                                            background: alpha(colorTokens.support, 0.28),
+                                        },
+                                        '&:hover': {
+                                            background: alpha(colorTokens.surface, 0.08),
                                         },
                                         transition: 'all 0.2s'
                                     }}
@@ -188,7 +191,7 @@ export const AdminPage = () => {
                                     <ListItemIcon
                                         sx={{
                                             minWidth: 40,
-                                            color: selectedIndex === index ? 'white' : 'text.secondary'
+                                            color: selectedIndex === index ? 'white' : alpha(colorTokens.surface, 0.72)
                                         }}
                                     >
                                         {item.icon}
@@ -213,15 +216,12 @@ export const AdminPage = () => {
                             startIcon={<Logout />}
                             onClick={handleLogout}
                             sx={{
-                                borderRadius: 2,
-                                textTransform: 'none',
-                                fontWeight: 600,
-                                borderColor: '#e2e8f0',
-                                color: '#64748b',
+                                borderColor: alpha(colorTokens.surface, 0.24),
+                                color: '#fff',
                                 '&:hover': {
-                                    borderColor: '#ef4444',
-                                    color: '#ef4444',
-                                    bgcolor: '#fee2e2'
+                                    borderColor: colorTokens.accentOrange,
+                                    color: '#fff',
+                                    bgcolor: alpha(colorTokens.accentOrange, 0.18)
                                 }
                             }}
                         >
@@ -230,14 +230,14 @@ export const AdminPage = () => {
                     </Box>
 
                     {/* Footer */}
-                    <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center' }}>
+                    <Box sx={{ p: 2, borderTop: `1px solid ${alpha(colorTokens.surface, 0.12)}` }}>
+                        <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', color: alpha(colorTokens.surface, 0.54) }}>
                             v1.0.0 • 2026
                         </Typography>
                     </Box>
                 </Paper>
 
-                <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#f8f9fa' }}>
+                <Box sx={{ flex: 1, overflow: 'auto', bgcolor: 'background.default' }}>
                     <Box sx={{ minHeight: '100%', animation: 'fadeIn 0.3s ease-in' }}>
                         <Outlet />
                     </Box>

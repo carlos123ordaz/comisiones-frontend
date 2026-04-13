@@ -1,0 +1,36 @@
+:root {
+  --color-brand: #0B3D5C;
+  --color-primary: #1F49B6;
+  --color-primary-hover: #4E7CDD;
+  --color-accent-gold: #E9A61A;
+  --color-accent-orange: #EA8344;
+  --color-accent-teal: #4F9DA5;
+  --color-text-primary: #3C3C3B;
+  --color-text-secondary: #828281;
+  --color-info: #0088BB;
+  --color-background: #F4F7FA;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #F8FAFC;
+  --color-border: #D7DDE3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+a {
+  color: var(--color-info);
+}

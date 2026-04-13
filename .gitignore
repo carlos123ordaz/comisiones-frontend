@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+.vite
+
+# Tauri / Rust local build artifacts
+src-tauri/target
+src-tauri/target*/
 
 # Editor directories and files
 .vscode/*

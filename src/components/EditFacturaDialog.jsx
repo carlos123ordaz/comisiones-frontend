@@ -21,6 +21,7 @@ import {
     Tooltip,
     Stack
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
     Close as CloseIcon,
     Save as SaveIcon,
@@ -30,6 +31,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { URI_API } from '../config/api';
+import { colorTokens } from '../theme';
 
 const API_URL = URI_API;
 
@@ -289,7 +291,7 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
                 ) : factura ? (
                     <>
                         {/* Información básica de la factura */}
-                        <Paper sx={{ p: 2, mb: 3, bgcolor: 'grey.50', border: '1px solid', borderColor: 'divider' }}>
+                        <Paper sx={{ p: 2, mb: 3, bgcolor: 'background.default', border: '1px solid', borderColor: 'divider' }}>
                             <Grid container spacing={2}>
                                 <Grid item xs={12} sm={6}>
                                     <Typography variant="caption" color="text.secondary">
@@ -352,11 +354,11 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
                         </Box>
 
                         {/* Comisión base */}
-                        <Box sx={{ mb: 3, p: 2, bgcolor: 'info.50', borderRadius: 2, border: '1px solid', borderColor: 'info.200' }}>
-                            <Typography variant="caption" color="info.700" fontWeight={600}>
+                        <Box sx={{ mb: 3, p: 2, bgcolor: alpha(colorTokens.info, 0.08), borderRadius: 2, border: `1px solid ${alpha(colorTokens.info, 0.18)}` }}>
+                            <Typography variant="caption" sx={{ color: colorTokens.info }} fontWeight={600}>
                                 💡 Comisión base (1% del monto actualizado)
                             </Typography>
-                            <Typography variant="h6" fontWeight={700} color="info.900">
+                            <Typography variant="h6" fontWeight={700} sx={{ color: colorTokens.brand }}>
                                 {formatCurrency(comisionBase)}
                             </Typography>
                         </Box>
@@ -462,11 +464,11 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
                                             />
                                         </Grid>
                                         <Grid item xs={12}>
-                                            <Box sx={{ p: 1.5, bgcolor: 'success.50', borderRadius: 1 }}>
-                                                <Typography variant="caption" color="success.700">
+                                            <Box sx={{ p: 1.5, bgcolor: alpha(colorTokens.accentTeal, 0.10), borderRadius: 1 }}>
+                                                <Typography variant="caption" sx={{ color: colorTokens.accentTeal }}>
                                                     Comisión calculada ({responsable.porcentaje}% de {formatCurrency(comisionBase)})
                                                 </Typography>
-                                                <Typography variant="h6" fontWeight={700} color="success.900">
+                                                <Typography variant="h6" fontWeight={700} sx={{ color: colorTokens.brand }}>
                                                     {formatCurrency(responsable.comision)}
                                                 </Typography>
                                             </Box>
@@ -493,7 +495,7 @@ export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
                         </Alert>
 
                         {/* Resumen total */}
-                        <Box sx={{ p: 2, bgcolor: 'primary.50', borderRadius: 2, border: '2px solid', borderColor: 'primary.200' }}>
+                        <Box sx={{ p: 2, bgcolor: alpha(colorTokens.action, 0.08), borderRadius: 2, border: `1px solid ${alpha(colorTokens.action, 0.18)}` }}>
                             <Grid container spacing={2}>
                                 <Grid item xs={6}>
                                     <Typography variant="caption" color="text.secondary">

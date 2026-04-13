@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     Box,
     Typography,
@@ -17,6 +17,7 @@ import {
     DialogActions,
     Stack
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
     BarChart,
     Bar,
@@ -48,6 +49,7 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import moment from 'moment';
 import { URI_API } from '../config/api';
+import { chartColors, colorTokens } from '../theme';
 
 const UserDashboard = () => {
     const { user, logout } = useAuth();
@@ -69,46 +71,20 @@ const UserDashboard = () => {
         filename: '',
         savedPath: '',
     });
+    const hasInitialized = useRef(false);
+    const skipNextReactiveFetch = useRef(false);
 
-    useEffect(() => {
-        const fetchUsuarios = async () => {
-            try {
-                if (!user.esLider) {
-                    setUsuarios([{
-                        nombre: user.nombre,
-                        unidad_negocio: user.unidad_negocio || 'N/A'
-                    }]);
-                    setUserSelected(user.nombre);
-                } else {
-                    const response = await axios.get(`${API_BASE_URL}/usuarios`);
-                    setUsuarios(response.data);
-                    if (response.data.length > 0) {
-                        setUserSelected(response.data[0].nombre);
-                    }
-                }
-            } catch (error) {
-                console.error('Error al obtener usuarios:', error);
-                setError('Error al cargar la lista de usuarios');
-            }
-        };
-
-        if (user) {
-            fetchUsuarios();
-        }
-    }, [user]);
-
-    const fetchData = async () => {
-        if (!userSelected) return;
-
+    const fetchData = async (selectedUserName, { silent = false } = {}) => {
+        if (!selectedUserName) return;
         try {
-            setLoading(true);
+            if (!silent) setLoading(true);
             setError(null);
 
             const [resumeResponse, comisionesResponse] = await Promise.all([
-                axios.get(`${API_BASE_URL}/resumen/${userSelected}/${trimestreSelected}`, {
+                axios.get(`${API_BASE_URL}/resumen/${selectedUserName}/${trimestreSelected}`, {
                     params: { anio: selectedYear }
                 }),
-                axios.get(`${API_BASE_URL}/comisiones/${userSelected}/${trimestreSelected}`, {
+                axios.get(`${API_BASE_URL}/comisiones/${selectedUserName}/${trimestreSelected}`, {
                     params: { anio: selectedYear }
                 })
             ]);
@@ -129,9 +105,85 @@ const UserDashboard = () => {
     };
 
     useEffect(() => {
-        if (selectedYear) {
-            fetchData();
+        if (!user) return;
+
+        let cancelled = false;
+
+        const initializeDashboard = async () => {
+            try {
+                setLoading(true);
+                setError(null);
+
+                let initialUsers = [];
+                let initialSelectedUser = '';
+
+                if (!user.esLider) {
+                    initialUsers = [{
+                        nombre: user.nombre,
+                        unidad_negocio: user.unidad_negocio || 'N/A'
+                    }];
+                    initialSelectedUser = user.nombre;
+                } else {
+                    const response = await axios.get(`${API_BASE_URL}/usuarios`);
+                    if (cancelled) return;
+                    initialUsers = response.data;
+                    initialSelectedUser = response.data[0]?.nombre || '';
+                }
+
+                if (cancelled) return;
+
+                setUsuarios(initialUsers);
+                skipNextReactiveFetch.current = true;
+                setUserSelected(initialSelectedUser);
+
+                if (!initialSelectedUser) {
+                    hasInitialized.current = true;
+                    setLoading(false);
+                    return;
+                }
+
+                const [resumeResponse, comisionesResponse] = await Promise.all([
+                    axios.get(`${API_BASE_URL}/resumen/${initialSelectedUser}/${trimestreSelected}`, {
+                        params: { anio: selectedYear }
+                    }),
+                    axios.get(`${API_BASE_URL}/comisiones/${initialSelectedUser}/${trimestreSelected}`, {
+                        params: { anio: selectedYear }
+                    })
+                ]);
+
+                if (cancelled) return;
+
+                setTipoVista(resumeResponse.data.unidad_negocio);
+                setResume({
+                    productos: resumeResponse.data.data_productos || [],
+                    endress: resumeResponse.data.data_endress || null,
+                    unidad_negocio: resumeResponse.data.unidad_negocio
+                });
+                setComisiones(comisionesResponse.data || null);
+                hasInitialized.current = true;
+            } catch (error) {
+                if (cancelled) return;
+                console.error('Error al inicializar dashboard de usuario:', error);
+                setError(error.response?.data?.detail || 'Error al cargar los datos');
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
+
+        initializeDashboard();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [user]);
+
+    useEffect(() => {
+        if (!hasInitialized.current || !selectedYear) return;
+        if (skipNextReactiveFetch.current) {
+            skipNextReactiveFetch.current = false;
+            return;
         }
+        fetchData(userSelected, { silent: false });
     }, [userSelected, trimestreSelected, selectedYear]);
 
     const handleDownloadUserReport = async () => {
@@ -222,7 +274,7 @@ const UserDashboard = () => {
                 mes: mesesMap[mes],
                 total: total / 1000,
                 totalOriginal: total,
-                color: total >= umbralMensual ? '#3b82f6' : '#ef4444'
+                color: total >= umbralMensual ? colorTokens.action : colorTokens.accentOrange
             };
         });
     };
@@ -277,10 +329,7 @@ const UserDashboard = () => {
 
         if (productosPositivos.length === 0) return [];
 
-        const colors = [
-            '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
-            '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'
-        ];
+        const colors = chartColors;
 
         return productosPositivos.map((_, idx) => colors[idx % colors.length]);
     };
@@ -297,8 +346,8 @@ const UserDashboard = () => {
     const CustomGauge = ({ value, max }) => {
         const percentage = max > 0 ? (value / max) * 100 : 0;
         const gaugeData = [
-            { value: value, fill: percentage >= 100 ? '#10b981' : percentage >= 80 ? '#3b82f6' : '#ef4444' },
-            { value: Math.max(0, max - value), fill: '#f1f5f9' }
+            { value: value, fill: percentage >= 100 ? colorTokens.accentTeal : percentage >= 80 ? colorTokens.action : colorTokens.accentOrange },
+            { value: Math.max(0, max - value), fill: colorTokens.surfaceMuted }
         ];
 
         return (
@@ -330,13 +379,13 @@ const UserDashboard = () => {
                 }}>
                     <Typography variant="h3" sx={{
                         fontWeight: 700,
-                        color: '#0f172a',
+                        color: colorTokens.brand,
                         fontFamily: '"Satoshi", sans-serif',
                         fontSize: '3rem'
                     }}>
                         {value.toFixed(2)}
                     </Typography>
-                    <Typography sx={{ color: '#64748b', fontSize: '0.875rem' }}>
+                    <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
                         mil
                     </Typography>
                 </Box>
@@ -345,7 +394,7 @@ const UserDashboard = () => {
                     position: 'absolute',
                     bottom: '15%',
                     left: '15%',
-                    color: '#64748b',
+                    color: 'text.secondary',
                     fontSize: '0.875rem'
                 }}>
                     0.00
@@ -355,7 +404,7 @@ const UserDashboard = () => {
                     position: 'absolute',
                     bottom: '15%',
                     right: '15%',
-                    color: '#64748b',
+                    color: 'text.secondary',
                     fontSize: '0.875rem'
                 }}>
                     {max.toFixed(2)}
@@ -369,7 +418,7 @@ const UserDashboard = () => {
                     <Typography sx={{
                         fontSize: '1.2rem',
                         fontWeight: 600,
-                        color: percentage >= 100 ? '#10b981' : '#64748b'
+                        color: percentage >= 100 ? colorTokens.accentTeal : colorTokens.textSecondary
                     }}>
                         {percentage.toFixed(1)}%
                     </Typography>
@@ -415,10 +464,9 @@ const UserDashboard = () => {
     return (
         <>
             <Box sx={{
-                p: 3,
-                bgcolor: '#ffffff',
+                p: { xs: 2, md: 4 },
+                bgcolor: 'background.default',
                 minHeight: '100vh',
-                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
             }}>
                 {/* Header con botones */}
                 <Box sx={{
@@ -431,10 +479,10 @@ const UserDashboard = () => {
                     borderColor: 'divider'
                 }}>
                     <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                        <Typography variant="h5" sx={{ fontWeight: 700, color: colorTokens.brand }}>
                             {user.esLider ? 'Dashboard de Equipo' : 'Mi Dashboard'}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
+                        <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
                             {user.esLider ? `Visualizando: ${userSelected}` : `Bienvenido, ${user.nombre}`}
                         </Typography>
                     </Box>
@@ -448,18 +496,13 @@ const UserDashboard = () => {
                                     onClick={handleDownloadUserReport}
                                     disabled={downloading || !userSelected}
                                     sx={{
-                                        borderRadius: 2,
-                                        textTransform: 'none',
-                                        fontWeight: 600,
-                                        bgcolor: '#10b981',
-                                        boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)',
+                                        bgcolor: colorTokens.action,
                                         '&:hover': {
-                                            bgcolor: '#059669',
-                                            boxShadow: '0 4px 8px rgba(16, 185, 129, 0.3)',
+                                            bgcolor: colorTokens.support,
                                         },
                                         '&:disabled': {
-                                            bgcolor: '#d1d5db',
-                                            color: '#9ca3af',
+                                            bgcolor: alpha(colorTokens.border, 0.8),
+                                            color: colorTokens.textSecondary,
                                         }
                                     }}
                                 >
@@ -471,15 +514,12 @@ const UserDashboard = () => {
                                     startIcon={<Logout />}
                                     onClick={handleLogout}
                                     sx={{
-                                        borderRadius: 2,
-                                        textTransform: 'none',
-                                        fontWeight: 600,
-                                        borderColor: '#e2e8f0',
-                                        color: '#64748b',
+                                        borderColor: colorTokens.borderStrong,
+                                        color: colorTokens.textPrimary,
                                         '&:hover': {
-                                            borderColor: '#ef4444',
-                                            color: '#ef4444',
-                                            bgcolor: '#fee2e2'
+                                            borderColor: colorTokens.accentOrange,
+                                            color: colorTokens.accentOrange,
+                                            bgcolor: alpha(colorTokens.accentOrange, 0.08)
                                         }
                                     }}
                                 >

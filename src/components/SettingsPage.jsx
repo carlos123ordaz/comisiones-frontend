@@ -27,6 +27,7 @@ import {
     TablePagination,
     InputAdornment
 } from '@mui/material';
+import { colorTokens } from '../theme';
 import {
     Edit as EditIcon,
     Delete as DeleteIcon,
@@ -257,7 +258,15 @@ export const SettingsPage = () => {
     }
 
     return (
-        <Box sx={{ p: 3 }}>
+        <Box sx={{ p: { xs: 2, md: 4 }, bgcolor: 'background.default', minHeight: '100vh' }}>
+            <Box sx={{ mb: 3 }}>
+                <Typography variant="h5" sx={{ color: colorTokens.brand, mb: 0.5 }}>
+                    ConfiguraciÃ³n
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                    Administra vendedores, facturas y procesos de carga con una interfaz consistente.
+                </Typography>
+            </Box>
             {/* Tabs */}
             <Paper
                 elevation={0}
@@ -618,9 +627,10 @@ export const SettingsPage = () => {
                         startIcon={<SaveIcon />}
                         disabled={!formData.nombre || !formData.meta_mensual || !formData.porcentaje_umbral || isSaving}
                         sx={{
-                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                            textTransform: 'none',
-                            fontWeight: 600
+                            bgcolor: colorTokens.action,
+                            '&:hover': {
+                                bgcolor: colorTokens.support
+                            }
                         }}
                     >
                         {isSaving ? 'Guardando...' : (editingVendedor ? 'Actualizar' : 'Crear')}
