@@ -1,46 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Box,
-    Typography,
-    Paper,
-    Grid,
-    FormControl,
-    Select,
-    MenuItem,
-    CircularProgress,
-    Alert,
-    Button,
-    IconButton,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    Stack
-} from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import {
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    Cell,
-    PieChart,
-    Pie,
-    ReferenceLine,
-    Legend
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+    ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine, Legend
 } from 'recharts';
-import {
-    Logout,
-    Download,
-    CheckCircle,
-    FolderOpen,
-    OpenInNew,
-    Description,
-    Close
-} from '@mui/icons-material';
+import { LogOut, Download, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -49,1047 +12,381 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import moment from 'moment';
 import { URI_API } from '../config/api';
-import { chartColors, colorTokens } from '../theme';
+import { Button, Select, Alert, Spinner, DownloadSuccessDialog, IconButton } from './ui';
+import { useTheme } from '../contexts/ThemeContext';
+import { Moon, Sun } from 'lucide-react';
+
+const CHART_COLORS = ['#4f46e5','#14b8a6','#f59e0b','#ef4444','#3b82f6','#a855f7'];
 
 const UserDashboard = () => {
-    const { user, logout } = useAuth();
-    const navigate = useNavigate();
-    const [userSelected, setUserSelected] = useState('');
+    const { isDark, toggleTheme } = useTheme();
+    const { user, logout }              = useAuth();
+    const navigate                      = useNavigate();
+    const [userSelected, setUserSelected]         = useState('');
     const [trimestreSelected, setTrimestreSelected] = useState('3');
-    const [selectedYear, setSelectedYear] = useState(2025);
-    const [usuarios, setUsuarios] = useState([]);
-    const [resume, setResume] = useState(null);
-    const [tipoVista, setTipoVista] = useState('umbral');
-    const [comisiones, setComisiones] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const availableYears = [2025, 2026];
-    const API_BASE_URL = URI_API;
-    const [downloading, setDownloading] = useState(false);
-    const [downloadDialog, setDownloadDialog] = useState({
-        open: false,
-        filename: '',
-        savedPath: '',
-    });
-    const hasInitialized = useRef(false);
-    const skipNextReactiveFetch = useRef(false);
+    const [selectedYear, setSelectedYear]         = useState(2025);
+    const [usuarios, setUsuarios]                 = useState([]);
+    const [resume, setResume]                     = useState(null);
+    const [tipoVista, setTipoVista]               = useState('umbral');
+    const [comisiones, setComisiones]             = useState(null);
+    const [loading, setLoading]                   = useState(false);
+    const [error, setError]                       = useState(null);
+    const [downloading, setDownloading]           = useState(false);
+    const [downloadDialog, setDownloadDialog]     = useState({ open:false, filename:'', savedPath:'' });
+    const hasInitialized   = useRef(false);
+    const skipNextReactive = useRef(false);
+    const availableYears   = [2025, 2026];
 
-    const fetchData = async (selectedUserName, { silent = false } = {}) => {
-        if (!selectedUserName) return;
+    const fetchData = async (name, { silent = false } = {}) => {
+        if (!name) return;
         try {
             if (!silent) setLoading(true);
             setError(null);
-
-            const [resumeResponse, comisionesResponse] = await Promise.all([
-                axios.get(`${API_BASE_URL}/resumen/${selectedUserName}/${trimestreSelected}`, {
-                    params: { anio: selectedYear }
-                }),
-                axios.get(`${API_BASE_URL}/comisiones/${selectedUserName}/${trimestreSelected}`, {
-                    params: { anio: selectedYear }
-                })
+            const [rR, cR] = await Promise.all([
+                axios.get(`${URI_API}/resumen/${name}/${trimestreSelected}`,  { params: { anio: selectedYear } }),
+                axios.get(`${URI_API}/comisiones/${name}/${trimestreSelected}`,{ params: { anio: selectedYear } }),
             ]);
-            setTipoVista(resumeResponse.data.unidad_negocio);
-            setResume({
-                productos: resumeResponse.data.data_productos || [],
-                endress: resumeResponse.data.data_endress || null,
-                unidad_negocio: resumeResponse.data.unidad_negocio
-            });
-            setComisiones(comisionesResponse.data || null);
-
-        } catch (error) {
-            console.error('Error al obtener datos:', error);
-            setError(error.response?.data?.detail || 'Error al cargar los datos');
-        } finally {
-            setLoading(false);
-        }
+            setTipoVista(rR.data.unidad_negocio);
+            setResume({ productos: rR.data.data_productos || [], endress: rR.data.data_endress || null, unidad_negocio: rR.data.unidad_negocio });
+            setComisiones(cR.data || null);
+        } catch (e) {
+            setError(e.response?.data?.detail || 'Error al cargar datos');
+        } finally { setLoading(false); }
     };
 
     useEffect(() => {
         if (!user) return;
-
         let cancelled = false;
-
-        const initializeDashboard = async () => {
+        const init = async () => {
             try {
-                setLoading(true);
-                setError(null);
-
-                let initialUsers = [];
-                let initialSelectedUser = '';
-
+                setLoading(true); setError(null);
+                let users = [], selected = '';
                 if (!user.esLider) {
-                    initialUsers = [{
-                        nombre: user.nombre,
-                        unidad_negocio: user.unidad_negocio || 'N/A'
-                    }];
-                    initialSelectedUser = user.nombre;
+                    users    = [{ nombre: user.nombre, unidad_negocio: user.unidad_negocio || 'N/A' }];
+                    selected = user.nombre;
                 } else {
-                    const response = await axios.get(`${API_BASE_URL}/usuarios`);
+                    const r = await axios.get(`${URI_API}/usuarios`);
                     if (cancelled) return;
-                    initialUsers = response.data;
-                    initialSelectedUser = response.data[0]?.nombre || '';
+                    users    = r.data;
+                    selected = r.data[0]?.nombre || '';
                 }
-
                 if (cancelled) return;
-
-                setUsuarios(initialUsers);
-                skipNextReactiveFetch.current = true;
-                setUserSelected(initialSelectedUser);
-
-                if (!initialSelectedUser) {
-                    hasInitialized.current = true;
-                    setLoading(false);
-                    return;
-                }
-
-                const [resumeResponse, comisionesResponse] = await Promise.all([
-                    axios.get(`${API_BASE_URL}/resumen/${initialSelectedUser}/${trimestreSelected}`, {
-                        params: { anio: selectedYear }
-                    }),
-                    axios.get(`${API_BASE_URL}/comisiones/${initialSelectedUser}/${trimestreSelected}`, {
-                        params: { anio: selectedYear }
-                    })
+                setUsuarios(users);
+                skipNextReactive.current = true;
+                setUserSelected(selected);
+                if (!selected) { hasInitialized.current = true; setLoading(false); return; }
+                const [rR, cR] = await Promise.all([
+                    axios.get(`${URI_API}/resumen/${selected}/${trimestreSelected}`,  { params: { anio: selectedYear } }),
+                    axios.get(`${URI_API}/comisiones/${selected}/${trimestreSelected}`,{ params: { anio: selectedYear } }),
                 ]);
-
                 if (cancelled) return;
-
-                setTipoVista(resumeResponse.data.unidad_negocio);
-                setResume({
-                    productos: resumeResponse.data.data_productos || [],
-                    endress: resumeResponse.data.data_endress || null,
-                    unidad_negocio: resumeResponse.data.unidad_negocio
-                });
-                setComisiones(comisionesResponse.data || null);
+                setTipoVista(rR.data.unidad_negocio);
+                setResume({ productos: rR.data.data_productos || [], endress: rR.data.data_endress || null, unidad_negocio: rR.data.unidad_negocio });
+                setComisiones(cR.data || null);
                 hasInitialized.current = true;
-            } catch (error) {
-                if (cancelled) return;
-                console.error('Error al inicializar dashboard de usuario:', error);
-                setError(error.response?.data?.detail || 'Error al cargar los datos');
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
+            } catch (e) {
+                if (!cancelled) setError(e.response?.data?.detail || 'Error al cargar datos');
+            } finally { if (!cancelled) setLoading(false); }
         };
-
-        initializeDashboard();
-
-        return () => {
-            cancelled = true;
-        };
+        init();
+        return () => { cancelled = true; };
     }, [user]);
 
     useEffect(() => {
         if (!hasInitialized.current || !selectedYear) return;
-        if (skipNextReactiveFetch.current) {
-            skipNextReactiveFetch.current = false;
-            return;
-        }
+        if (skipNextReactive.current) { skipNextReactive.current = false; return; }
         fetchData(userSelected, { silent: false });
     }, [userSelected, trimestreSelected, selectedYear]);
 
     const handleDownloadUserReport = async () => {
         if (!userSelected) return;
-
         setDownloading(true);
         try {
-            const response = await axios.get(
-                `${API_BASE_URL}/invoices/execute_report_by_user`,
-                {
-                    params: { name_user: userSelected },
-                    responseType: 'blob',
-                    headers: {
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache',
-                        'Expires': '0',
-                    },
-                }
-            );
-
-            const timestamp = moment().format('YYYYMMDD_HHmmss');
-            const fileName = `reporte_${userSelected.replace(/\s+/g, '_')}_${timestamp}.xlsx`;
-
-            const blob = response.data;
-            const arrayBuffer = await blob.arrayBuffer();
-
-            const filePath = await save({
-                defaultPath: fileName,
-                filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+            const r = await axios.get(`${URI_API}/invoices/execute_report_by_user`, {
+                params: { name_user: userSelected }, responseType: 'blob',
+                headers: { 'Cache-Control':'no-cache', Pragma:'no-cache', Expires:'0' },
             });
-
-            if (filePath) {
-                await writeFile(filePath, new Uint8Array(arrayBuffer));
-
-                setDownloadDialog({
-                    open: true,
-                    filename: fileName,
-                    savedPath: filePath,
-                });
+            const ts       = moment().format('YYYYMMDD_HHmmss');
+            const fileName = `reporte_${userSelected.replace(/\s+/g,'_')}_${ts}.xlsx`;
+            const ab       = await r.data.arrayBuffer();
+            const fp       = await save({ defaultPath: fileName, filters: [{ name:'Excel', extensions:['xlsx'] }] });
+            if (fp) {
+                await writeFile(fp, new Uint8Array(ab));
+                setDownloadDialog({ open:true, filename:fileName, savedPath:fp });
             }
-        } catch (error) {
-            console.error('Error al descargar reporte:', error);
-            const errorMsg = error.response?.data?.detail || error.message || 'Error al descargar';
-            alert(`Error: ${errorMsg}`);
-        } finally {
-            setDownloading(false);
-        }
+        } catch (e) {
+            alert(`Error: ${e.response?.data?.detail || e.message}`);
+        } finally { setDownloading(false); }
     };
 
-    const handleCloseDownloadDialog = () => {
-        setDownloadDialog({ open: false, filename: '', savedPath: '' });
+    /* ── Data helpers ─────────────────────────────────────── */
+    const trimMeses = {
+        '1':{1:'enero',2:'febrero',3:'marzo'},
+        '2':{4:'abril',5:'mayo',6:'junio'},
+        '3':{7:'julio',8:'agosto',9:'septiembre'},
+        '4':{10:'octubre',11:'noviembre',12:'diciembre'},
     };
 
-    const handleOpenFile = async () => {
-        try {
-            await openPath(downloadDialog.savedPath);
-        } catch (error) {
-            console.error('Error abriendo archivo:', error);
-        }
-    };
+    const getProductosPositivos = () =>
+        resume?.productos?.filter(p => (p['Total'] || 0) > 0) || [];
 
-    const handleShowInFolder = async () => {
-        try {
-            await revealItemInDir(downloadDialog.savedPath);
-        } catch (error) {
-            console.error('Error mostrando carpeta:', error);
-        }
+    const getProductoMesData = () => {
+        const pos = getProductosPositivos();
+        if (!pos.length) return [];
+        const mesesMap = trimMeses[trimestreSelected];
+        const mesesNums = Object.keys(mesesMap).map(Number);
+        return Object.values(mesesMap).map((nombre, i) => {
+            const mesNum = mesesNums[i];
+            const dp = { mes: nombre };
+            pos.forEach(p => { dp[p['Producto']] = (p[mesNum] || 0) > 0 ? (p[mesNum] || 0) / 1000 : 0; });
+            return dp;
+        });
     };
 
     const getMonthlyData = () => {
-        if (!resume || !resume.endress) return [];
-
-        const trimestreMeses = {
-            '1': { 1: 'enero', 2: 'febrero', 3: 'marzo' },
-            '2': { 4: 'abril', 5: 'mayo', 6: 'junio' },
-            '3': { 7: 'julio', 8: 'agosto', 9: 'septiembre' },
-            '4': { 10: 'octubre', 11: 'noviembre', 12: 'diciembre' }
-        };
-
-        const mesesMap = trimestreMeses[trimestreSelected];
-        const umbralMensual = resume.endress['Umbral Mensual'] || 0;
-
+        if (!resume?.endress) return [];
+        const mesesMap  = trimMeses[trimestreSelected];
+        const umbralM   = resume.endress['Umbral Mensual'] || 0;
         return Object.keys(mesesMap).map(mes => {
-            const mesNum = parseInt(mes);
-            const total = resume.endress[mesNum] || 0;
-
-            return {
-                mes: mesesMap[mes],
-                total: total / 1000,
-                totalOriginal: total,
-                color: total >= umbralMensual ? colorTokens.action : colorTokens.accentOrange
-            };
+            const total = resume.endress[parseInt(mes)] || 0;
+            return { mes: mesesMap[mes], total: total/1000, totalOriginal: total, color: total >= umbralM ? '#4f46e5' : '#f59e0b' };
         });
-    };
-
-    // ============================================================================
-    // NUEVA FUNCIÓN: Filtrar productos positivos para gráficos
-    // ============================================================================
-    const getProductosPositivos = () => {
-        if (!resume || !resume.productos || !Array.isArray(resume.productos)) return [];
-
-        // Filtrar solo productos con total positivo
-        return resume.productos.filter(producto => (producto['Total'] || 0) > 0);
-    };
-
-    const getProductoMesData = () => {
-        // Usar productos filtrados (solo positivos) para el gráfico
-        const productosPositivos = getProductosPositivos();
-
-        if (productosPositivos.length === 0) return [];
-
-        const trimestreMeses = {
-            '1': { 1: 'enero', 2: 'febrero', 3: 'marzo' },
-            '2': { 4: 'abril', 5: 'mayo', 6: 'junio' },
-            '3': { 7: 'julio', 8: 'agosto', 9: 'septiembre' },
-            '4': { 10: 'octubre', 11: 'noviembre', 12: 'diciembre' }
-        };
-
-        const mesesMap = trimestreMeses[trimestreSelected];
-        const mesesNums = Object.keys(mesesMap).map(m => parseInt(m));
-
-        const data = Object.values(mesesMap).map((nombreMes, idx) => {
-            const mesNum = mesesNums[idx];
-            const dataPoint = { mes: nombreMes };
-
-            // Solo usar productos positivos
-            productosPositivos.forEach(producto => {
-                const productoNombre = producto['Producto'];
-                const valorMes = producto[mesNum] || 0;
-                // Solo agregar si el valor del mes también es positivo
-                dataPoint[productoNombre] = valorMes > 0 ? valorMes / 1000 : 0;
-            });
-
-            return dataPoint;
-        });
-
-        return data;
-    };
-
-    const getProductoColors = () => {
-        // Usar productos filtrados (solo positivos) para los colores
-        const productosPositivos = getProductosPositivos();
-
-        if (productosPositivos.length === 0) return [];
-
-        const colors = chartColors;
-
-        return productosPositivos.map((_, idx) => colors[idx % colors.length]);
     };
 
     const getGaugeData = () => {
-        if (!resume || !resume.endress) return { value: 0, max: 0 };
-
-        const value = (resume.endress['Total'] || 0) / 1000;
-        const max = (resume.endress['Umbral Trimestral'] || 0) / 1000;
-
-        return { value, max };
+        if (!resume?.endress) return { value:0, max:0 };
+        return { value: (resume.endress['Total'] || 0)/1000, max: (resume.endress['Umbral Trimestral'] || 0)/1000 };
     };
 
-    const CustomGauge = ({ value, max }) => {
-        const percentage = max > 0 ? (value / max) * 100 : 0;
-        const gaugeData = [
-            { value: value, fill: percentage >= 100 ? colorTokens.accentTeal : percentage >= 80 ? colorTokens.action : colorTokens.accentOrange },
-            { value: Math.max(0, max - value), fill: colorTokens.surfaceMuted }
-        ];
+    const productoMesData    = getProductoMesData();
+    const productosPositivos = getProductosPositivos();
+    const monthlyData        = getMonthlyData();
+    const gaugeInfo          = getGaugeData();
+    const totalAmount        = resume?.productos?.reduce((s, p) => s + (p['Total'] || 0), 0) || 0;
+    const esUNAU             = tipoVista === 'UNAU';
 
+    /* ── Gauge ─────────────────────────────────────────────── */
+    const CustomGauge = ({ value, max }) => {
+        const pct = max > 0 ? (value / max) * 100 : 0;
+        const gaugeData = [
+            { value, fill: pct >= 100 ? '#10b981' : pct >= 80 ? '#4f46e5' : '#f59e0b' },
+            { value: Math.max(0, max - value), fill: '#f1f2f5' },
+        ];
         return (
-            <Box sx={{ position: 'relative', width: '100%', height: 280, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <div className="relative w-full" style={{ height: 240 }}>
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                        <Pie
-                            data={gaugeData}
-                            cx="50%"
-                            cy="70%"
-                            startAngle={180}
-                            endAngle={0}
-                            innerRadius="70%"
-                            outerRadius="90%"
-                            dataKey="value"
-                            stroke="none"
-                        >
-                            {gaugeData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.fill} />
-                            ))}
+                        <Pie data={gaugeData} cx="50%" cy="72%" startAngle={180} endAngle={0} innerRadius="68%" outerRadius="88%" dataKey="value" stroke="none">
+                            {gaugeData.map((e,i) => <Cell key={i} fill={e.fill} />)}
                         </Pie>
                     </PieChart>
                 </ResponsiveContainer>
-
-                <Box sx={{
-                    position: 'absolute',
-                    bottom: '25%',
-                    textAlign: 'center'
-                }}>
-                    <Typography variant="h3" sx={{
-                        fontWeight: 700,
-                        color: colorTokens.brand,
-                        fontFamily: '"Satoshi", sans-serif',
-                        fontSize: '3rem'
-                    }}>
-                        {value.toFixed(2)}
-                    </Typography>
-                    <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
-                        mil
-                    </Typography>
-                </Box>
-
-                <Typography sx={{
-                    position: 'absolute',
-                    bottom: '15%',
-                    left: '15%',
-                    color: 'text.secondary',
-                    fontSize: '0.875rem'
-                }}>
-                    0.00
-                </Typography>
-
-                <Typography sx={{
-                    position: 'absolute',
-                    bottom: '15%',
-                    right: '15%',
-                    color: 'text.secondary',
-                    fontSize: '0.875rem'
-                }}>
-                    {max.toFixed(2)}
-                </Typography>
-
-                <Box sx={{
-                    position: 'absolute',
-                    top: '10%',
-                    textAlign: 'center'
-                }}>
-                    <Typography sx={{
-                        fontSize: '1.2rem',
-                        fontWeight: 600,
-                        color: percentage >= 100 ? colorTokens.accentTeal : colorTokens.textSecondary
-                    }}>
-                        {percentage.toFixed(1)}%
-                    </Typography>
-                </Box>
-            </Box>
+                <div className="absolute bottom-[26%] left-0 right-0 flex flex-col items-center">
+                    <span className="mono tnum text-[28px] font-[700] text-n-900 leading-[1]">{value.toFixed(2)}</span>
+                    <span className="text-[11px] text-n-500 mt-0.5">mil</span>
+                </div>
+                <span className="absolute bottom-[14%] left-[14%] text-[11px] text-n-500">0.00</span>
+                <span className="absolute bottom-[14%] right-[14%] text-[11px] text-n-500">{max.toFixed(2)}</span>
+                <span className="absolute top-[8%] left-0 right-0 text-center mono tnum text-[15px] font-[600]"
+                    style={{ color: pct >= 100 ? '#10b981' : pct >= 80 ? '#4f46e5' : '#f59e0b' }}>
+                    {pct.toFixed(1)}%
+                </span>
+            </div>
         );
     };
 
-    const handleLogout = () => {
-        logout();
-        navigate('/login');
+    const gridColor   = isDark ? '#2e3248' : '#e1e4ea';
+    const axisColor   = isDark ? '#5a6070' : '#7a818f';
+    const tooltipStyle = {
+        backgroundColor: isDark ? '#15181f' : '#fff',
+        border: `1px solid ${isDark ? '#2e3248' : '#e1e4ea'}`,
+        borderRadius: 10,
+        fontSize: 12,
+        color: isDark ? '#dde2e9' : '#242832',
     };
 
-    if (loading) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-                <CircularProgress size={60} />
-            </Box>
-        );
-    }
-
-    if (error) {
-        return (
-            <Box sx={{ p: 3 }}>
-                <Alert severity="error">{error}</Alert>
-            </Box>
-        );
-    }
-
-    const monthlyData = getMonthlyData();
-    const productoMesData = getProductoMesData();
-    const productoColors = getProductoColors();
-    const productosPositivos = getProductosPositivos(); // Para usar en el gráfico
-    const gaugeInfo = getGaugeData();
-
-    // Total amount usa TODOS los productos (incluyendo negativos)
-    const totalAmount = resume?.productos
-        ? resume.productos.reduce((sum, p) => sum + (p['Total'] || 0), 0)
-        : 0;
-
-    const esUNAU = tipoVista === 'UNAU';
+    if (loading) return <div className="flex justify-center items-center h-60"><Spinner size={40} /></div>;
+    if (error)   return <div className="p-4 md:p-6"><Alert severity="error">{error}</Alert></div>;
 
     return (
         <>
-            <Box sx={{
-                p: { xs: 2, md: 4 },
-                bgcolor: 'background.default',
-                minHeight: '100vh',
-            }}>
-                {/* Header con botones */}
-                <Box sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    mb: 3,
-                    pb: 2,
-                    borderBottom: '1px solid',
-                    borderColor: 'divider'
-                }}>
-                    <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 700, color: colorTokens.brand }}>
-                            {user.esLider ? 'Dashboard de Equipo' : 'Mi Dashboard'}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
-                            {user.esLider ? `Visualizando: ${userSelected}` : `Bienvenido, ${user.nombre}`}
-                        </Typography>
-                    </Box>
-
-                    {
-                        !user.esLider && (
-                            <Box sx={{ display: 'flex', gap: 2 }}>
-                                <Button
-                                    variant="contained"
-                                    startIcon={downloading ? <CircularProgress size={18} color="inherit" /> : <Download />}
-                                    onClick={handleDownloadUserReport}
-                                    disabled={downloading || !userSelected}
-                                    sx={{
-                                        bgcolor: colorTokens.action,
-                                        '&:hover': {
-                                            bgcolor: colorTokens.support,
-                                        },
-                                        '&:disabled': {
-                                            bgcolor: alpha(colorTokens.border, 0.8),
-                                            color: colorTokens.textSecondary,
-                                        }
-                                    }}
-                                >
-                                    {downloading ? 'Descargando...' : 'Exportar Reporte'}
-                                </Button>
-
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<Logout />}
-                                    onClick={handleLogout}
-                                    sx={{
-                                        borderColor: colorTokens.borderStrong,
-                                        color: colorTokens.textPrimary,
-                                        '&:hover': {
-                                            borderColor: colorTokens.accentOrange,
-                                            color: colorTokens.accentOrange,
-                                            bgcolor: alpha(colorTokens.accentOrange, 0.08)
-                                        }
-                                    }}
-                                >
-                                    Cerrar Sesión
-                                </Button>
-                            </Box>
-                        )
-                    }
-                </Box>
-
-                {/* Header con selectores */}
-                <Grid container spacing={2} sx={{ mb: 3 }}>
-                    <Grid size={{ xs: 12, md: 3 }}>
-                        <Paper sx={{ p: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                            <Typography variant="caption" sx={{ color: '#64748b', mb: 1, display: 'block', fontWeight: 500 }}>
-                                Vendedor
-                            </Typography>
-                            <FormControl fullWidth size="small">
-                                <Select
-                                    value={userSelected}
-                                    onChange={(e) => setUserSelected(e.target.value)}
-                                    sx={{ bgcolor: '#f8fafc' }}
-                                    disabled={usuarios.length === 0 || !user.esLider}
-                                >
-                                    {usuarios.map((usuario) => (
-                                        <MenuItem key={usuario.nombre} value={usuario.nombre}>
-                                            {usuario.nombre}
-                                            {usuario.unidad_negocio !== 'N/A' && (
-                                                <Typography component="span" sx={{ ml: 1, color: '#64748b', fontSize: '0.75rem' }}>
-                                                    ({usuario.unidad_negocio})
-                                                </Typography>
-                                            )}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Paper>
-                    </Grid>
-
-                    <Grid size={{ xs: 12, md: 3 }}>
-                        <Paper sx={{ p: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                            <Typography variant="caption" sx={{ color: '#64748b', mb: 1, display: 'block', fontWeight: 500 }}>
-                                Trimestre
-                            </Typography>
-                            <FormControl fullWidth size="small">
-                                <Select
-                                    value={trimestreSelected}
-                                    onChange={(e) => setTrimestreSelected(e.target.value)}
-                                    sx={{ bgcolor: '#f8fafc' }}
-                                >
-                                    <MenuItem value="1">Q1 (Ene-Mar)</MenuItem>
-                                    <MenuItem value="2">Q2 (Abr-Jun)</MenuItem>
-                                    <MenuItem value="3">Q3 (Jul-Sep)</MenuItem>
-                                    <MenuItem value="4">Q4 (Oct-Dic)</MenuItem>
-                                </Select>
-                            </FormControl>
-                        </Paper>
-                    </Grid>
-
-                    <Grid size={{ xs: 12, md: 3 }}>
-                        <Paper sx={{ p: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                            <Typography variant="caption" sx={{ color: '#64748b', mb: 1, display: 'block', fontWeight: 500 }}>
-                                Año
-                            </Typography>
-                            <FormControl fullWidth size="small">
-                                <Select
-                                    value={selectedYear}
-                                    onChange={(e) => setSelectedYear(e.target.value)}
-                                    sx={{ bgcolor: '#f8fafc' }}
-                                >
-                                    {availableYears.map(year => (
-                                        <MenuItem key={year} value={year}>{year}</MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Paper>
-                    </Grid>
-                </Grid>
-
-                {/* Main Content Grid */}
-                <Grid container spacing={3}>
-                    {/* Left Section - Summary Card */}
-                    <Grid size={{ xs: 12, md: 3 }}>
-                        <Paper sx={{ p: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.1)', height: '100%' }}>
-                            <Typography variant="h6" sx={{
-                                fontWeight: 600,
-                                color: '#3b82f6',
-                                mb: 3,
-                                fontSize: '1.1rem'
-                            }}>
-                                Todos los Productos
-                            </Typography>
-
-                            <Box>
-                                <Typography variant="h4" sx={{
-                                    fontWeight: 700,
-                                    color: '#0f172a',
-                                    fontFamily: '"Satoshi", sans-serif',
-                                    mb: 0.5
-                                }}>
-                                    {totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                </Typography>
-                                <Typography variant="body2" sx={{ color: '#64748b', fontSize: '0.875rem' }}>
-                                    Total Q{trimestreSelected} {selectedYear}
-                                </Typography>
-                            </Box>
-
-                            {/* Top 5 productos - Muestra TODOS los productos (incluyendo negativos) */}
-                            {resume?.productos && resume.productos.length > 0 && (
-                                <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #e2e8f0' }}>
-                                    <Typography variant="body2" sx={{ color: '#3b82f6', fontSize: '0.875rem', fontWeight: 600, mb: 2 }}>
-                                        📦 Top Productos
-                                    </Typography>
-                                    {resume.productos.slice(0, 5).map((producto, idx) => {
-                                        const total = producto['Total'] || 0;
-                                        const esNegativo = total < 0;
-
-                                        return (
-                                            <Box key={idx} sx={{ mb: 2 }}>
-                                                <Typography variant="body2" sx={{
-                                                    color: '#64748b',
-                                                    fontSize: '0.7rem',
-                                                    mb: 0.3,
-                                                    whiteSpace: 'nowrap',
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis'
-                                                }}>
-                                                    {idx + 1}. {producto['Producto']}
-                                                    {esNegativo && ' ⚠️'}
-                                                </Typography>
-                                                <Typography variant="body1" sx={{
-                                                    fontWeight: 600,
-                                                    color: esNegativo ? '#ef4444' : '#0f172a',
-                                                    fontSize: '0.9rem'
-                                                }}>
-                                                    {total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                                </Typography>
-                                            </Box>
-                                        );
-                                    })}
-                                </Box>
-                            )}
-
-                            {/* Comisiones */}
-                            {comisiones && (
-                                <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #e2e8f0' }}>
-                                    <Typography variant="body2" sx={{ color: '#3b82f6', fontSize: '0.875rem', fontWeight: 600, mb: 2 }}>
-                                        💰 Comisiones Q{trimestreSelected} {selectedYear}
-                                    </Typography>
-
-                                    <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#f0f9ff', border: '1px solid #bae6fd' }}>
-                                        <Typography variant="body2" sx={{ color: '#0369a1', fontSize: '0.7rem', mb: 0.3 }}>
-                                            Comisión Total
-                                        </Typography>
-                                        <Typography variant="h5" sx={{ fontWeight: 700, color: '#0369a1' }}>
-                                            {comisiones.comision_total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            )}
-                        </Paper>
-                    </Grid>
-
-                    {/* Center & Right Section - Gráfico de productos por mes */}
-                    <Grid size={{ xs: 12, md: 9 }}>
-                        <Paper sx={{ p: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#0f172a', fontSize: '1rem' }}>
-                                Ventas por Producto y Mes (en miles) - {selectedYear}
-                            </Typography>
-                            {productoMesData.length > 0 && productosPositivos.length > 0 ? (
-                                <ResponsiveContainer width="100%" height={400}>
-                                    <BarChart data={productoMesData}>
-                                        <CartesianGrid
-                                            strokeDasharray="3 3"
-                                            stroke="#e2e8f0"
-                                            horizontal={true}
-                                            vertical={false}
-                                        />
-                                        <XAxis
-                                            dataKey="mes"
-                                            stroke="#64748b"
-                                            axisLine={false}
-                                            tickLine={false}
-                                            style={{ fontSize: '0.875rem' }}
-                                        />
-                                        <YAxis
-                                            stroke="#64748b"
-                                            axisLine={false}
-                                            tickLine={false}
-                                            style={{ fontSize: '0.875rem' }}
-                                            label={{
-                                                value: 'Total (miles)',
-                                                angle: -90,
-                                                position: 'insideLeft',
-                                                style: { fontSize: '0.75rem', fill: '#64748b' }
-                                            }}
-                                        />
-                                        <Tooltip
-                                            contentStyle={{
-                                                backgroundColor: '#fff',
-                                                border: '1px solid #e2e8f0',
-                                                borderRadius: '8px',
-                                                fontSize: '0.875rem'
-                                            }}
-                                            formatter={(value) => `${(value * 1000).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`}
-                                        />
-                                        <Legend />
-                                        {/* Usar solo productos positivos en el gráfico */}
-                                        {productosPositivos.map((producto, idx) => (
-                                            <Bar
-                                                key={idx}
-                                                dataKey={producto['Producto']}
-                                                stackId="a"
-                                                fill={productoColors[idx]}
-                                            />
-                                        ))}
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
-                                    <Typography color="text.secondary">No hay datos disponibles</Typography>
-                                </Box>
-                            )}
-                        </Paper>
-                    </Grid>
-                </Grid>
-
-                {/* Sección adicional de Umbrales - Solo para UNAU */}
-                {esUNAU && resume?.endress && (
-                    <Grid container spacing={3} sx={{ mt: 1 }}>
-                        <Grid size={{ xs: 12 }}>
-                            <Paper sx={{ p: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#3b82f6', fontSize: '1.2rem' }}>
-                                    📊 Análisis de Umbrales Endress - {selectedYear}
-                                </Typography>
-
-                                <Grid container spacing={3}>
-                                    {/* Métricas de Umbral */}
-                                    <Grid size={{ xs: 12, md: 3 }}>
-                                        <Box>
-                                            <Typography variant="body2" sx={{ color: '#64748b', fontSize: '0.875rem', mb: 1 }}>
-                                                Total Endress
-                                            </Typography>
-                                            <Typography variant="h4" sx={{ fontWeight: 700, color: '#0f172a', mb: 2 }}>
-                                                {(resume.endress['Total'] || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                            </Typography>
-
-                                            <Box sx={{ mt: 3 }}>
-                                                <Typography variant="body2" sx={{ color: '#64748b', fontSize: '0.75rem', mb: 0.5 }}>
-                                                    Umbral Mensual
-                                                </Typography>
-                                                <Typography variant="body1" sx={{ fontWeight: 600, color: '#0f172a' }}>
-                                                    {resume.endress['Umbral Mensual']?.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                                </Typography>
-                                            </Box>
-
-                                            <Box sx={{ mt: 2 }}>
-                                                <Typography variant="body2" sx={{ color: '#64748b', fontSize: '0.75rem', mb: 0.5 }}>
-                                                    Umbral Trimestral
-                                                </Typography>
-                                                <Typography variant="body1" sx={{ fontWeight: 600, color: '#0f172a' }}>
-                                                    {resume.endress['Umbral Trimestral']?.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                                </Typography>
-                                            </Box>
-
-                                            <Box sx={{ mt: 3, p: 2, borderRadius: 2, bgcolor: resume.endress['Paso'] ? '#dcfce7' : '#fee2e2' }}>
-                                                <Typography sx={{
-                                                    color: resume.endress['Paso'] ? '#16a34a' : '#dc2626',
-                                                    fontSize: '0.875rem',
-                                                    fontWeight: 600,
-                                                    textAlign: 'center'
-                                                }}>
-                                                    {resume.endress['Paso'] ? '✓ Umbral Alcanzado' : '✗ Umbral No Alcanzado'}
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    </Grid>
-
-                                    {/* Gráfico de barras mensuales */}
-                                    <Grid size={{ xs: 12, md: 5 }}>
-                                        <Typography variant="body1" sx={{ mb: 2, fontWeight: 600, color: '#0f172a', fontSize: '0.95rem' }}>
-                                            Endress por Mes (en miles)
-                                        </Typography>
-                                        {monthlyData.length > 0 ? (
-                                            <>
-                                                <ResponsiveContainer width="100%" height={280}>
-                                                    <BarChart data={monthlyData} barSize={60}>
-                                                        <CartesianGrid
-                                                            strokeDasharray="3 3"
-                                                            stroke="#e2e8f0"
-                                                            horizontal={true}
-                                                            vertical={false}
-                                                        />
-                                                        <XAxis
-                                                            dataKey="mes"
-                                                            stroke="#64748b"
-                                                            axisLine={false}
-                                                            tickLine={false}
-                                                            style={{ fontSize: '0.75rem' }}
-                                                        />
-                                                        <YAxis
-                                                            stroke="#64748b"
-                                                            axisLine={false}
-                                                            tickLine={false}
-                                                            style={{ fontSize: '0.75rem' }}
-                                                        />
-                                                        <Tooltip
-                                                            contentStyle={{
-                                                                backgroundColor: '#fff',
-                                                                border: '1px solid #e2e8f0',
-                                                                borderRadius: '8px',
-                                                                fontSize: '0.875rem'
-                                                            }}
-                                                            formatter={(value, name, props) => [
-                                                                `${props.payload.totalOriginal.toLocaleString('es-PE', { minimumFractionDigits: 2 })}`,
-                                                                'Total'
-                                                            ]}
-                                                        />
-
-                                                        {resume.endress['Umbral Mensual'] && (
-                                                            <ReferenceLine
-                                                                y={resume.endress['Umbral Mensual'] / 1000}
-                                                                stroke="#ef4444"
-                                                                strokeDasharray="8 4"
-                                                                strokeWidth={2}
-                                                                label={{
-                                                                    value: 'Umbral',
-                                                                    position: 'right',
-                                                                    fill: '#ef4444',
-                                                                    fontSize: 11,
-                                                                    fontWeight: 600
-                                                                }}
-                                                            />
-                                                        )}
-
-                                                        {resume.endress['Umbral Meta'] && (
-                                                            <ReferenceLine
-                                                                y={resume.endress['Umbral Meta'] / 1000}
-                                                                stroke="#3b82f6"
-                                                                strokeDasharray="8 4"
-                                                                strokeWidth={2}
-                                                                label={{
-                                                                    value: 'Meta',
-                                                                    position: 'right',
-                                                                    fill: '#3b82f6',
-                                                                    fontSize: 11,
-                                                                    fontWeight: 600
-                                                                }}
-                                                            />
-                                                        )}
-
-                                                        <Bar
-                                                            dataKey="total"
-                                                            radius={[4, 4, 0, 0]}
-                                                            label={{
-                                                                position: 'top',
-                                                                formatter: (value) => `${value.toFixed(1)}k`,
-                                                                style: { fontSize: '0.75rem', fill: '#0f172a', fontWeight: 600 }
-                                                            }}
-                                                        >
-                                                            {monthlyData.map((entry, index) => (
-                                                                <Cell key={`cell-${index}`} fill={entry.color} />
-                                                            ))}
-                                                        </Bar>
-                                                    </BarChart>
-                                                </ResponsiveContainer>
-
-                                                <Box sx={{ mt: 1, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                        <Box sx={{
-                                                            width: 20,
-                                                            height: 2,
-                                                            bgcolor: '#ef4444',
-                                                            borderRadius: 1,
-                                                            borderStyle: 'dashed'
-                                                        }} />
-                                                        <Typography sx={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                                            Umbral: {(resume.endress['Umbral Mensual'] / 1000).toFixed(1)}k
-                                                        </Typography>
-                                                    </Box>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                        <Box sx={{
-                                                            width: 20,
-                                                            height: 2,
-                                                            bgcolor: '#3b82f6',
-                                                            borderRadius: 1,
-                                                            borderStyle: 'dashed'
-                                                        }} />
-                                                        <Typography sx={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                                            Meta: {(resume.endress['Umbral Meta'] / 1000).toFixed(1)}k
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                            </>
-                                        ) : (
-                                            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 280 }}>
-                                                <Typography color="text.secondary" fontSize="0.875rem">No hay datos</Typography>
-                                            </Box>
-                                        )}
-                                    </Grid>
-
-                                    {/* Gauge */}
-                                    <Grid size={{ xs: 12, md: 4 }}>
-                                        <Typography variant="body1" sx={{ mb: 2, fontWeight: 600, color: '#0f172a', fontSize: '0.95rem' }}>
-                                            Progreso vs Umbral Trimestral
-                                        </Typography>
-                                        <CustomGauge value={gaugeInfo.value} max={gaugeInfo.max} />
-                                    </Grid>
-                                </Grid>
-                            </Paper>
-                        </Grid>
-                    </Grid>
+        <div className="p-4 md:p-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-5 pb-4 border-b border-n-150">
+                <div>
+                    <h1 className="text-[17px] font-[700] text-n-900">{user.esLider ? 'Dashboard de Equipo' : 'Mi Dashboard'}</h1>
+                    <p className="text-[12.5px] text-n-500 mt-0.5">{user.esLider ? `Visualizando: ${userSelected}` : `Bienvenido, ${user.nombre}`}</p>
+                </div>
+                {!user.esLider && (
+                    <div className="flex flex-wrap gap-2 shrink-0">
+                        <Button variant="primary" icon={downloading ? () => <Loader2 size={14} className="animate-spin" /> : Download}
+                            onClick={handleDownloadUserReport} disabled={downloading || !userSelected}>
+                            {downloading ? 'Descargando...' : 'Exportar Reporte'}
+                        </Button>
+                        <Button variant="ghost" icon={LogOut} onClick={() => { logout(); navigate('/login'); }}>
+                            Cerrar Sesión
+                        </Button>
+                        <IconButton icon={isDark ? Sun : Moon} onClick={toggleTheme} title={isDark ? 'Modo claro' : 'Modo oscuro'} />
+                    </div>
                 )}
-            </Box>
+            </div>
 
-            {/* Diálogo de descarga exitosa (sin cambios) */}
-            <Dialog
-                open={downloadDialog.open}
-                onClose={handleCloseDownloadDialog}
-                maxWidth="sm"
-                fullWidth
-                PaperProps={{
-                    sx: {
-                        borderRadius: '8px',
-                        boxShadow: '0 16px 48px rgba(0,0,0,0.12)',
-                    },
-                }}
-            >
-                <DialogTitle
-                    sx={{
-                        p: 2.5,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        borderBottom: '1px solid #E5E7EB',
-                    }}
-                >
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <CheckCircle
-                            sx={{
-                                color: '#10b981',
-                                mr: 1.5,
-                                fontSize: 24,
-                            }}
+            {/* Filters row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+                {[
+                    { label: 'Vendedor', el: (
+                        <Select
+                            value={userSelected}
+                            onChange={setUserSelected}
+                            disabled={!user.esLider || usuarios.length === 0}
+                            options={usuarios.map(u => ({ value: u.nombre, label: u.unidad_negocio && u.unidad_negocio !== 'N/A' ? `${u.nombre} (${u.unidad_negocio})` : u.nombre }))}
                         />
-                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#1F2937' }}>
-                            Archivo guardado exitosamente
-                        </Typography>
-                    </Box>
-                    <IconButton
-                        size="small"
-                        onClick={handleCloseDownloadDialog}
-                        sx={{ color: '#6B7280' }}
-                    >
-                        <Close />
-                    </IconButton>
-                </DialogTitle>
+                    )},
+                    { label: 'Trimestre', el: (
+                        <Select value={trimestreSelected} onChange={setTrimestreSelected}
+                            options={[{value:'1',label:'Q1 (Ene-Mar)'},{value:'2',label:'Q2 (Abr-Jun)'},{value:'3',label:'Q3 (Jul-Sep)'},{value:'4',label:'Q4 (Oct-Dic)'}]}
+                        />
+                    )},
+                    { label: 'Año', el: (
+                        <Select value={selectedYear} onChange={v => setSelectedYear(Number(v))}
+                            options={availableYears.map(y => ({ value: y, label: String(y) }))}
+                        />
+                    )},
+                ].map(f => (
+                    <div key={f.label} className="card p-3">
+                        <label className="block text-[11px] font-[600] text-n-500 uppercase tracking-[0.06em] mb-1.5">{f.label}</label>
+                        {f.el}
+                    </div>
+                ))}
+            </div>
 
-                <DialogContent sx={{ p: 2.5 }}>
-                    <Stack spacing={2}>
-                        <Box
-                            sx={{
-                                p: 1.5,
-                                bgcolor: '#F9FAFB',
-                                border: '1px solid #E5E7EB',
-                                borderRadius: '6px',
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                <Description
-                                    sx={{
-                                        fontSize: 32,
-                                        color: '#10b981',
-                                        mr: 1.5,
-                                    }}
-                                />
-                                <Box sx={{ flex: 1 }}>
-                                    <Typography
-                                        variant="body2"
-                                        sx={{
-                                            fontWeight: 600,
-                                            color: '#1F2937',
-                                            wordBreak: 'break-all',
-                                        }}
-                                    >
-                                        {downloadDialog.filename}
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ color: '#6B7280' }}>
-                                        Reporte de {userSelected}
-                                    </Typography>
-                                </Box>
-                            </Box>
-                        </Box>
-                        <Box>
-                            <Typography
-                                variant="caption"
-                                sx={{
-                                    color: '#6B7280',
-                                    display: 'block',
-                                    mb: 1,
-                                    fontWeight: 500,
-                                }}
-                            >
-                                Guardado en:
-                            </Typography>
-                            <Box
-                                sx={{
-                                    p: 1,
-                                    bgcolor: '#F9FAFB',
-                                    border: '1px solid #E5E7EB',
-                                    borderRadius: '6px',
-                                    fontFamily: 'monospace',
-                                    fontSize: '12px',
-                                    color: '#4B5563',
-                                    wordBreak: 'break-all',
-                                }}
-                            >
-                                {downloadDialog.savedPath}
-                            </Box>
-                        </Box>
-                    </Stack>
-                </DialogContent>
+            {/* Main grid */}
+            <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-5">
+                {/* Left: summary */}
+                <div className="card p-4">
+                    <div className="text-[12.5px] font-[700] text-brand-700 mb-3">Todos los Productos</div>
+                    <div className="mono tnum text-[26px] font-[700] text-n-900 leading-[1]">{totalAmount.toLocaleString('es-PE',{minimumFractionDigits:2})}</div>
+                    <div className="text-[11.5px] text-n-500 mt-1">Total Q{trimestreSelected} {selectedYear}</div>
 
-                <DialogActions
-                    sx={{
-                        p: 2.5,
-                        borderTop: '1px solid #E5E7EB',
-                        gap: 1,
-                    }}
-                >
-                    <Button
-                        variant="outlined"
-                        startIcon={<FolderOpen />}
-                        onClick={handleShowInFolder}
-                        fullWidth
-                        sx={{
-                            py: 1,
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            textTransform: 'none',
-                            borderColor: '#D1D5DB',
-                            color: '#1F2937',
-                            '&:hover': {
-                                borderColor: '#9CA3AF',
-                                bgcolor: '#F9FAFB',
-                            },
-                        }}
-                    >
-                        Mostrar en carpeta
-                    </Button>
-                    <Button
-                        variant="contained"
-                        startIcon={<OpenInNew />}
-                        onClick={handleOpenFile}
-                        fullWidth
-                        sx={{
-                            py: 1,
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            textTransform: 'none',
-                            bgcolor: '#10b981',
-                            '&:hover': {
-                                bgcolor: '#059669',
-                            },
-                        }}
-                    >
-                        Abrir archivo
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                    {resume?.productos?.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-n-100">
+                            <div className="text-[11.5px] font-[600] text-brand-700 mb-2">Top Productos</div>
+                            {resume.productos.slice(0,5).map((p, i) => {
+                                const total = p['Total'] || 0;
+                                const neg   = total < 0;
+                                return (
+                                    <div key={i} className="mb-2.5">
+                                        <div className="text-[11px] text-n-500 truncate mb-0.5">{i+1}. {p['Producto']}{neg && ' ⚠️'}</div>
+                                        <div className={`mono tnum text-[13px] font-[600] ${neg ? 'text-red-600' : 'text-n-900'}`}>
+                                            {total.toLocaleString('es-PE',{minimumFractionDigits:2})}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {comisiones && (
+                        <div className="mt-4 pt-3 border-t border-n-100">
+                            <div className="text-[11.5px] font-[600] text-brand-700 mb-2">Comisiones Q{trimestreSelected} {selectedYear}</div>
+                            <div className="p-2.5 rounded-[8px] bg-brand-50 border border-brand-100">
+                                <div className="text-[11px] text-brand-600 mb-0.5">Comisión Total</div>
+                                <div className="mono tnum text-[18px] font-[700] text-brand-700">{comisiones.comision_total.toLocaleString('es-PE',{minimumFractionDigits:2})}</div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Right: chart */}
+                <div className="card p-4">
+                    <div className="text-[13px] font-[700] text-n-900 mb-4">Ventas por Producto y Mes (en miles) — {selectedYear}</div>
+                    {productoMesData.length > 0 && productosPositivos.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={340}>
+                            <BarChart data={productoMesData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                                <XAxis dataKey="mes" stroke={axisColor} axisLine={false} tickLine={false} style={{fontSize:11}} />
+                                <YAxis stroke={axisColor} axisLine={false} tickLine={false} style={{fontSize:11}} label={{value:'Total (miles)',angle:-90,position:'insideLeft',style:{fontSize:10,fill:'#7a818f'}}} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={v => `${(v*1000).toLocaleString('es-PE',{minimumFractionDigits:2})}`} />
+                                <Legend />
+                                {productosPositivos.map((p, i) => (
+                                    <Bar key={i} dataKey={p['Producto']} stackId="a" fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                                ))}
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="flex items-center justify-center h-[340px] text-n-500 text-[13px]">No hay datos disponibles</div>
+                    )}
+                </div>
+            </div>
+
+            {/* Endress section */}
+            {esUNAU && resume?.endress && (
+                <div className="card p-5 mt-5">
+                    <div className="text-[14px] font-[700] text-brand-700 mb-5">Análisis de Umbrales Endress — {selectedYear}</div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        {/* Metrics */}
+                        <div>
+                            <div className="text-[11.5px] text-n-500 mb-1">Total Endress</div>
+                            <div className="mono tnum text-[24px] font-[700] text-n-900 mb-4">{(resume.endress['Total']||0).toLocaleString('es-PE',{minimumFractionDigits:2})}</div>
+                            <div className="mb-2">
+                                <div className="text-[11px] text-n-500 mb-0.5">Umbral Mensual</div>
+                                <div className="font-[600] text-n-800 mono tnum">{resume.endress['Umbral Mensual']?.toLocaleString('es-PE',{minimumFractionDigits:2})}</div>
+                            </div>
+                            <div className="mb-4">
+                                <div className="text-[11px] text-n-500 mb-0.5">Umbral Trimestral</div>
+                                <div className="font-[600] text-n-800 mono tnum">{resume.endress['Umbral Trimestral']?.toLocaleString('es-PE',{minimumFractionDigits:2})}</div>
+                            </div>
+                            <div className={`p-2.5 rounded-[8px] text-center font-[600] text-[12.5px] ${resume.endress['Paso'] ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                                {resume.endress['Paso'] ? '✓ Umbral Alcanzado' : '✗ Umbral No Alcanzado'}
+                            </div>
+                        </div>
+
+                        {/* Bar chart */}
+                        <div>
+                            <div className="text-[12.5px] font-[600] text-n-900 mb-3">Endress por Mes (en miles)</div>
+                            {monthlyData.length > 0 ? (
+                                <>
+                                    <ResponsiveContainer width="100%" height={220}>
+                                        <BarChart data={monthlyData} barSize={50}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                                            <XAxis dataKey="mes" stroke={axisColor} axisLine={false} tickLine={false} style={{fontSize:11}} />
+                                            <YAxis stroke={axisColor} axisLine={false} tickLine={false} style={{fontSize:11}} />
+                                            <Tooltip contentStyle={tooltipStyle} formatter={(v,n,p) => [`${p.payload.totalOriginal.toLocaleString('es-PE',{minimumFractionDigits:2})}`,'Total']} />
+                                            {resume.endress['Umbral Mensual'] && <ReferenceLine y={resume.endress['Umbral Mensual']/1000} stroke="#ef4444" strokeDasharray="8 4" strokeWidth={2} label={{value:'Umbral',position:'right',fill:'#ef4444',fontSize:10,fontWeight:600}} />}
+                                            {resume.endress['Umbral Meta'] && <ReferenceLine y={resume.endress['Umbral Meta']/1000} stroke="#4f46e5" strokeDasharray="8 4" strokeWidth={2} label={{value:'Meta',position:'right',fill:'#4f46e5',fontSize:10,fontWeight:600}} />}
+                                            <Bar dataKey="total" radius={[4,4,0,0]}>
+                                                {monthlyData.map((e,i) => <Cell key={i} fill={e.color} />)}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                    <div className="flex justify-center gap-4 mt-2 text-[11px] text-n-500">
+                                        <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-red-500 inline-block" style={{borderTop:'2px dashed #ef4444'}} />Umbral: {(resume.endress['Umbral Mensual']/1000).toFixed(1)}k</span>
+                                        <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-brand-500 inline-block" style={{borderTop:'2px dashed #4f46e5'}} />Meta: {(resume.endress['Umbral Meta']/1000).toFixed(1)}k</span>
+                                    </div>
+                                </>
+                            ) : <div className="flex items-center justify-center h-[220px] text-n-500">Sin datos</div>}
+                        </div>
+
+                        {/* Gauge */}
+                        <div>
+                            <div className="text-[12.5px] font-[600] text-n-900 mb-3">Progreso vs Umbral Trimestral</div>
+                            <CustomGauge value={gaugeInfo.value} max={gaugeInfo.max} />
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+
+        {/* Download dialog */}
+        <DownloadSuccessDialog
+            open={downloadDialog.open}
+            onClose={() => setDownloadDialog({open:false,filename:'',savedPath:''})}
+            filename={downloadDialog.filename}
+            savedPath={downloadDialog.savedPath}
+            subtitle={`Reporte de ${userSelected}`}
+            onOpenFile={async () => { try { await openPath(downloadDialog.savedPath); } catch(e){console.error(e);} }}
+            onShowInFolder={async () => { try { await revealItemInDir(downloadDialog.savedPath); } catch(e){console.error(e);} }}
+        />
         </>
     );
 };

@@ -1,30 +1,20 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Box, CircularProgress } from '@mui/material';
+import { Spinner } from './ui';
 
 export const ProtectedRoute = ({ children, requireAdmin = false }) => {
     const { user, loading } = useAuth();
 
     if (loading) {
         return (
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '100vh'
-            }}>
-                <CircularProgress />
-            </Box>
+            <div className="flex justify-center items-center min-h-screen">
+                <Spinner size={36} />
+            </div>
         );
     }
 
-    if (!user) {
-        return <Navigate to="/login" replace />;
-    }
-
-    if (requireAdmin && !user.esLider) {
-        return <Navigate to="/dashboard" replace />;
-    }
+    if (!user) return <Navigate to="/login" replace />;
+    if (requireAdmin && !user.esLider) return <Navigate to="/dashboard" replace />;
 
     return children;
 };

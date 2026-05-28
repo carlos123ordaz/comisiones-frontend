@@ -1,6 +1,4 @@
-import { Box, List, ListItem, ListItemButton, ListItemText, ListItemIcon, Paper, Divider, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Stack, CircularProgress } from '@mui/material'
-import { Settings, Dashboard, People, Logout, Download, CheckCircle, FolderOpen, OpenInNew, Description, Close } from '@mui/icons-material';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -8,36 +6,59 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import axios from 'axios';
 import moment from 'moment';
-import { alpha } from '@mui/material/styles';
 import { URI_API } from '../config/api';
-import { colorTokens } from '../theme';
+import { Button, IconButton, Spinner, DownloadSuccessDialog } from './ui';
+import { useTheme } from '../contexts/ThemeContext';
+import {
+    Settings, LayoutDashboard, Users, LogOut,
+    Download, ChevronLeft, ChevronRight, Layers, Menu, X, Moon, Sun
+} from 'lucide-react';
+
+const NAV = [
+    { label: 'Configuración', icon: Settings,       path: '/'        },
+    { label: 'General',       icon: LayoutDashboard, path: '/general' },
+    { label: 'Por Usuario',   icon: Users,           path: '/user'    },
+];
 
 export const AdminPage = () => {
-    const navigate = useNavigate();
-    const location = useLocation();
+    const navigate  = useNavigate();
+    const location  = useLocation();
     const { user, logout } = useAuth();
+    const [collapsed, setCollapsed]     = useState(false);
+    const [mobileOpen, setMobileOpen]   = useState(false);
+    const [isMobile, setIsMobile]       = useState(false);
 
-    // Estados para descarga
+    const { isDark, toggleTheme } = useTheme();
     const [downloading, setDownloading] = useState(false);
-    const [downloadDialog, setDownloadDialog] = useState({
-        open: false,
-        filename: '',
-        savedPath: '',
-    });
+    const [downloadDialog, setDownloadDialog] = useState({ open: false, filename: '', savedPath: '' });
 
-    const menuItems = [
-        { label: 'Configuración', icon: <Settings />, path: '/' },
-        { label: 'General', icon: <Dashboard />, path: '/general' },
-        { label: 'Por Usuario', icon: <People />, path: '/user' }
-    ];
+    // Responsive sidebar: overlay on mobile, auto-collapse at medium widths
+    useEffect(() => {
+        const onResize = () => {
+            const w = window.innerWidth;
+            if (w < 768) {
+                setIsMobile(true);
+                setMobileOpen(false);
+            } else {
+                setIsMobile(false);
+                if (w < 1100) setCollapsed(true);
+            }
+        };
+        onResize();
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
-    const selectedIndex = useMemo(() => {
-        return menuItems.findIndex(item => item.path === location.pathname);
-    }, [location.pathname]);
+    const selectedIndex = useMemo(
+        () => NAV.findIndex(item => item.path === location.pathname),
+        [location.pathname]
+    );
 
-    const handleLogout = () => {
-        logout();
-        navigate('/login');
+    const handleLogout = () => { logout(); navigate('/login'); };
+
+    const handleNavigate = (path) => {
+        navigate(path);
+        setMobileOpen(false); // close drawer after navigation on mobile
     };
 
     const handleDownloadReport = async () => {
@@ -45,36 +66,15 @@ export const AdminPage = () => {
         try {
             const response = await axios.get(`${URI_API}/invoices/export_report`, {
                 responseType: 'blob',
-                headers: {
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache',
-                    'Expires': '0',
-                },
+                headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', Expires: '0' },
             });
-            console.log('Respuesta de la API:', response);
             const timestamp = moment().format('YYYYMMDD_HHmmss');
-            const fileName = `reporte_invoices_${timestamp}.xlsx`;
-
-            // Convertir blob a arrayBuffer
-            const blob = response.data;
-            const arrayBuffer = await blob.arrayBuffer();
-
-            // Abrir diálogo para guardar archivo con Tauri
-            const filePath = await save({
-                defaultPath: fileName,
-                filters: [{ name: 'Excel', extensions: ['xlsx'] }],
-            });
-
+            const fileName  = `reporte_invoices_${timestamp}.xlsx`;
+            const arrayBuffer = await response.data.arrayBuffer();
+            const filePath = await save({ defaultPath: fileName, filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
             if (filePath) {
-                // Guardar archivo usando Tauri
                 await writeFile(filePath, new Uint8Array(arrayBuffer));
-
-                // Mostrar diálogo de descarga exitosa
-                setDownloadDialog({
-                    open: true,
-                    filename: fileName,
-                    savedPath: filePath,
-                });
+                setDownloadDialog({ open: true, filename: fileName, savedPath: filePath });
             }
         } catch (error) {
             console.error('Error al descargar reporte:', error);
@@ -84,335 +84,211 @@ export const AdminPage = () => {
         }
     };
 
-    const handleCloseDownloadDialog = () => {
-        setDownloadDialog({ open: false, filename: '', savedPath: '' });
-    };
+    // On mobile the sidebar is always "expanded" (232px) but shown as overlay
+    const isCollapsed = !isMobile && collapsed;
+    const W = isCollapsed ? 64 : 232;
 
-    const handleOpenFile = async () => {
-        try {
-            await openPath(downloadDialog.savedPath);
-        } catch (error) {
-            console.error('Error abriendo archivo:', error);
-        }
-    };
-
-    const handleShowInFolder = async () => {
-        try {
-            await revealItemInDir(downloadDialog.savedPath);
-        } catch (error) {
-            console.error('Error mostrando carpeta:', error);
-        }
-    };
+    const sidebarStyle = isMobile
+        ? {
+            position: 'fixed',
+            top: 0, left: 0,
+            height: '100%',
+            width: 232,
+            transform: mobileOpen ? 'translateX(0)' : 'translateX(-240px)',
+            transition: 'transform .25s cubic-bezier(.4,0,.2,1)',
+            zIndex: 20,
+          }
+        : {
+            width: W,
+            flexShrink: 0,
+            transition: 'width .25s cubic-bezier(.4,0,.2,1)',
+          };
 
     return (
-        <>
-            <Box sx={{ display: 'flex', height: '100vh', bgcolor: 'background.default', overflow: 'hidden' }}>
-                <Paper
-                    sx={{
-                        width: 280,
-                        borderRight: `1px solid ${alpha(colorTokens.surface, 0.08)}`,
-                        bgcolor: colorTokens.brand,
-                        color: '#fff',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        position: 'sticky',
-                        top: 0,
-                        height: '100vh',
-                        flexShrink: 0
-                    }}
+        <div className="flex h-screen bg-n-50 overflow-hidden">
+            {/* Mobile backdrop */}
+            {isMobile && mobileOpen && (
+                <div
+                    className="fixed inset-0 z-[19] bg-[rgba(10,12,20,0.35)]"
+                    onClick={() => setMobileOpen(false)}
+                />
+            )}
+
+            {/* ── Sidebar ── */}
+            <aside style={sidebarStyle} className="flex flex-col border-r border-n-150 bg-n-25">
+                {/* Header */}
+                <div
+                    style={{ height: 56 }}
+                    className={`flex items-center border-b border-n-150 ${isCollapsed ? 'justify-center px-0' : 'justify-between px-4'}`}
                 >
-                    {/* Logo/Header */}
-                    <Box sx={{ p: 3, pb: 2 }}>
-                        <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#fff' }}>
-                            Dashboard
-                        </Typography>
-                        <Typography variant="caption" sx={{ mt: 0.5, display: 'block', color: alpha(colorTokens.surface, 0.72) }}>
-                            Panel de administración
-                        </Typography>
-                        {user && (
-                            <Typography variant="caption" sx={{ mt: 1, display: 'block', color: '#fff', fontWeight: 600 }}>
-                                👤 {user.nombre}
-                            </Typography>
-                        )}
-                    </Box>
+                    {!isCollapsed ? (
+                        <div className="flex items-center gap-[9px]">
+                            <span className="w-6 h-6 rounded-[6px] bg-gradient-to-br from-brand-500 to-brand-700 inline-flex items-center justify-center text-white shadow-[0_1px_2px_rgba(79,70,229,0.3)]">
+                                <Layers size={13} />
+                            </span>
+                            <span className="text-[13px] font-[600] text-n-900 tracking-[-0.012em]">Comisiones</span>
+                        </div>
+                    ) : (
+                        <span className="w-[26px] h-[26px] rounded-[7px] bg-gradient-to-br from-brand-500 to-brand-700 inline-flex items-center justify-center text-white">
+                            <Layers size={14} />
+                        </span>
+                    )}
+                    {isMobile && (
+                        <IconButton icon={X} onClick={() => setMobileOpen(false)} title="Cerrar menú" />
+                    )}
+                </div>
 
-                    <Divider />
+                {/* User info */}
+                {!isCollapsed && user && (
+                    <div className="px-4 pt-3 pb-2">
+                        <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[11px] font-[700] shrink-0">
+                                {user.nombre?.charAt(0)?.toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                                <div className="text-[12px] font-[600] text-n-900 truncate">{user.nombre}</div>
+                                <div className="text-[11px] text-n-500">Administrador</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
-                    {/* Botón de Descarga */}
-                    <Box sx={{ px: 2, pt: 2 }}>
-                        <Button
-                            fullWidth
-                            variant="contained"
-                            startIcon={downloading ? <CircularProgress size={18} color="inherit" /> : <Download />}
+                {/* Download button */}
+                <div className={`px-2 pt-2 pb-1 ${isCollapsed ? 'flex justify-center' : ''}`}>
+                    {isCollapsed ? (
+                        <IconButton
+                            icon={downloading ? () => <Spinner size={16} /> : Download}
                             onClick={handleDownloadReport}
                             disabled={downloading}
-                            sx={{
-                                py: 1.5,
-                                bgcolor: colorTokens.action,
-                                '&:hover': {
-                                    bgcolor: colorTokens.support,
-                                },
-                                '&:disabled': {
-                                    bgcolor: alpha(colorTokens.surface, 0.18),
-                                    color: alpha(colorTokens.surface, 0.54),
-                                }
-                            }}
+                            title="Descargar Reporte"
+                        />
+                    ) : (
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            icon={downloading ? () => <Spinner size={13} className="text-white" /> : Download}
+                            onClick={handleDownloadReport}
+                            disabled={downloading}
+                            className="w-full justify-center"
                         >
                             {downloading ? 'Descargando...' : 'Descargar Reporte'}
                         </Button>
-                    </Box>
+                    )}
+                </div>
 
-                    <Divider sx={{ mt: 2 }} />
+                {/* Separator */}
+                <div className="mx-3 my-1 border-t border-n-150" />
 
-                    {/* Menu Items */}
-                    <List sx={{ px: 2, py: 2, flex: 1, overflow: 'auto' }}>
-                        {menuItems.map((item, index) => (
-                            <ListItem key={index} disablePadding sx={{ mb: 0.5 }}>
-                                <ListItemButton
-                                    selected={selectedIndex === index}
-                                    onClick={() => navigate(item.path)}
-                                    sx={{
-                                        borderRadius: 2,
-                                        py: 1.5,
-                                        color: alpha(colorTokens.surface, 0.72),
-                                        '&.Mui-selected': {
-                                            background: alpha(colorTokens.support, 0.22),
-                                            color: 'white',
-                                        },
-                                        '&.Mui-selected:hover': {
-                                            background: alpha(colorTokens.support, 0.28),
-                                        },
-                                        '&:hover': {
-                                            background: alpha(colorTokens.surface, 0.08),
-                                        },
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    <ListItemIcon
-                                        sx={{
-                                            minWidth: 40,
-                                            color: selectedIndex === index ? 'white' : alpha(colorTokens.surface, 0.72)
-                                        }}
-                                    >
-                                        {item.icon}
-                                    </ListItemIcon>
-                                    <ListItemText
-                                        primary={item.label}
-                                        primaryTypographyProps={{
-                                            fontWeight: selectedIndex === index ? 600 : 500,
-                                            fontSize: '0.95rem'
-                                        }}
-                                    />
-                                </ListItemButton>
-                            </ListItem>
-                        ))}
-                    </List>
+                {/* Nav */}
+                <nav className={`flex-1 flex flex-col gap-[1px] overflow-auto py-2 ${isCollapsed ? 'px-2' : 'px-3'}`}>
+                    {!isCollapsed && (
+                        <div className="text-[10.5px] text-n-500 uppercase tracking-[0.08em] font-[600] px-[10px] py-[6px] mb-[2px]">
+                            Menú
+                        </div>
+                    )}
+                    {NAV.map((item, index) => {
+                        const active = selectedIndex === index;
+                        return (
+                            <div
+                                key={item.path}
+                                onClick={() => handleNavigate(item.path)}
+                                title={item.label}
+                                className={`relative flex items-center gap-[10px] h-8 rounded-[7px] cursor-pointer text-[12.5px] tracking-[-0.005em] transition-all duration-150 select-none
+                                    ${isCollapsed ? 'justify-center px-0' : 'px-[10px]'}
+                                    ${active ? 'bg-brand-50 text-brand-700 font-[600]' : 'text-n-700 font-[500] hover:bg-n-100 hover:text-n-900'}`}
+                            >
+                                {active && !isCollapsed && (
+                                    <span className="absolute left-[-8px] top-[6px] bottom-[6px] w-[2px] bg-brand-600 rounded-[2px]" />
+                                )}
+                                <item.icon size={16} />
+                                {!isCollapsed && <span>{item.label}</span>}
+                            </div>
+                        );
+                    })}
+                </nav>
 
-                    {/* Botón de Logout */}
-                    <Box sx={{ p: 2 }}>
-                        <Button
-                            fullWidth
-                            variant="outlined"
-                            startIcon={<Logout />}
+                {/* Footer */}
+                <div className={`border-t border-n-150 flex flex-col gap-1 py-3 ${isCollapsed ? 'px-2 items-center' : 'px-3'}`}>
+                    {isCollapsed ? (
+                        <IconButton icon={LogOut} onClick={handleLogout} title="Cerrar Sesión" danger />
+                    ) : (
+                        <div
                             onClick={handleLogout}
-                            sx={{
-                                borderColor: alpha(colorTokens.surface, 0.24),
-                                color: '#fff',
-                                '&:hover': {
-                                    borderColor: colorTokens.accentOrange,
-                                    color: '#fff',
-                                    bgcolor: alpha(colorTokens.accentOrange, 0.18)
-                                }
-                            }}
+                            className="flex items-center gap-[10px] h-8 px-[10px] rounded-[7px] cursor-pointer text-[12.5px] font-[500] text-n-700 hover:bg-red-50 hover:text-red-600 transition-all duration-150"
                         >
-                            Cerrar Sesión
-                        </Button>
-                    </Box>
+                            <LogOut size={16} />
+                            <span>Cerrar Sesión</span>
+                        </div>
+                    )}
 
-                    {/* Footer */}
-                    <Box sx={{ p: 2, borderTop: `1px solid ${alpha(colorTokens.surface, 0.12)}` }}>
-                        <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', color: alpha(colorTokens.surface, 0.54) }}>
-                            v1.0.0 • 2026
-                        </Typography>
-                    </Box>
-                </Paper>
+                    {/* Theme toggle */}
+                    {isCollapsed ? (
+                        <IconButton icon={isDark ? Sun : Moon} onClick={toggleTheme} title={isDark ? 'Modo claro' : 'Modo oscuro'} />
+                    ) : (
+                        <div
+                            onClick={toggleTheme}
+                            className="flex items-center gap-[10px] h-8 px-[10px] rounded-[7px] cursor-pointer text-[12.5px] font-[500] text-n-700 hover:bg-n-100 hover:text-n-900 transition-all duration-150"
+                        >
+                            {isDark ? <Sun size={16} /> : <Moon size={16} />}
+                            <span>{isDark ? 'Modo Claro' : 'Modo Oscuro'}</span>
+                        </div>
+                    )}
 
-                <Box sx={{ flex: 1, overflow: 'auto', bgcolor: 'background.default' }}>
-                    <Box sx={{ minHeight: '100%', animation: 'fadeIn 0.3s ease-in' }}>
+                    {/* Collapse toggle — desktop only */}
+                    {!isMobile && (
+                        <button
+                            onClick={() => setCollapsed(c => !c)}
+                            title={isCollapsed ? 'Expandir' : 'Colapsar'}
+                            className={`flex items-center gap-[10px] h-[30px] rounded-[7px] text-n-500 text-[11.5px] font-[500] hover:bg-n-100 hover:text-n-800 transition-all duration-150 cursor-pointer
+                                ${isCollapsed ? 'justify-center w-full px-0' : 'px-[10px]'}`}
+                        >
+                            {isCollapsed ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /><span>Colapsar</span></>}
+                        </button>
+                    )}
+
+                    {!isCollapsed && (
+                        <div className="text-[11px] text-n-400 text-center mt-1">v1.0.0 · 2026</div>
+                    )}
+                </div>
+            </aside>
+
+            {/* ── Main content ── */}
+            <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+                {/* Header bar */}
+                <header style={{ height: 56 }} className="flex items-center justify-between px-4 sm:px-5 border-b border-n-150 bg-n-0 shrink-0 gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                        {isMobile && (
+                            <IconButton icon={Menu} onClick={() => setMobileOpen(true)} title="Abrir menú" />
+                        )}
+                        <h1 className="text-[15px] font-[700] text-n-900 tracking-[-0.014em] truncate">
+                            {NAV[selectedIndex]?.label ?? 'Panel'}
+                        </h1>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {user && !isCollapsed && !isMobile && (
+                            <span className="text-[12px] text-n-500 truncate max-w-[160px]">
+                                {user.nombre}
+                            </span>
+                        )}
+                    </div>
+                </header>
+
+                <main className="flex-1 overflow-auto">
+                    <div style={{ animation: 'fadeIn 0.2s ease' }}>
                         <Outlet />
-                    </Box>
-                </Box>
-                <style>
-                    {`
-                        @keyframes fadeIn {
-                            from {
-                                opacity: 0;
-                                transform: translateY(10px);
-                            }
-                            to {
-                                opacity: 1;
-                                transform: translateY(0);
-                            }
-                        }
-                    `}
-                </style>
-            </Box>
+                    </div>
+                </main>
+            </div>
 
-            {/* Diálogo de descarga exitosa */}
-            <Dialog
+            {/* Download Dialog */}
+            <DownloadSuccessDialog
                 open={downloadDialog.open}
-                onClose={handleCloseDownloadDialog}
-                maxWidth="sm"
-                fullWidth
-                PaperProps={{
-                    sx: {
-                        borderRadius: '8px',
-                        boxShadow: '0 16px 48px rgba(0,0,0,0.12)',
-                    },
-                }}
-            >
-                <DialogTitle
-                    sx={{
-                        p: 2.5,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        borderBottom: '1px solid #E5E7EB',
-                    }}
-                >
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <CheckCircle
-                            sx={{
-                                color: '#10b981',
-                                mr: 1.5,
-                                fontSize: 24,
-                            }}
-                        />
-                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#1F2937' }}>
-                            Archivo guardado exitosamente
-                        </Typography>
-                    </Box>
-                    <IconButton
-                        size="small"
-                        onClick={handleCloseDownloadDialog}
-                        sx={{ color: '#6B7280' }}
-                    >
-                        <Close />
-                    </IconButton>
-                </DialogTitle>
-
-                <DialogContent sx={{ p: 2.5 }}>
-                    <Stack spacing={2}>
-                        <Box
-                            sx={{
-                                p: 1.5,
-                                bgcolor: '#F9FAFB',
-                                border: '1px solid #E5E7EB',
-                                borderRadius: '6px',
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                <Description
-                                    sx={{
-                                        fontSize: 32,
-                                        color: '#10b981',
-                                        mr: 1.5,
-                                    }}
-                                />
-                                <Box sx={{ flex: 1 }}>
-                                    <Typography
-                                        variant="body2"
-                                        sx={{
-                                            fontWeight: 600,
-                                            color: '#1F2937',
-                                            wordBreak: 'break-all',
-                                        }}
-                                    >
-                                        {downloadDialog.filename}
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ color: '#6B7280' }}>
-                                        Archivo Excel
-                                    </Typography>
-                                </Box>
-                            </Box>
-                        </Box>
-                        <Box>
-                            <Typography
-                                variant="caption"
-                                sx={{
-                                    color: '#6B7280',
-                                    display: 'block',
-                                    mb: 1,
-                                    fontWeight: 500,
-                                }}
-                            >
-                                Guardado en:
-                            </Typography>
-                            <Box
-                                sx={{
-                                    p: 1,
-                                    bgcolor: '#F9FAFB',
-                                    border: '1px solid #E5E7EB',
-                                    borderRadius: '6px',
-                                    fontFamily: 'monospace',
-                                    fontSize: '12px',
-                                    color: '#4B5563',
-                                    wordBreak: 'break-all',
-                                }}
-                            >
-                                {downloadDialog.savedPath}
-                            </Box>
-                        </Box>
-                    </Stack>
-                </DialogContent>
-
-                <DialogActions
-                    sx={{
-                        p: 2.5,
-                        borderTop: '1px solid #E5E7EB',
-                        gap: 1,
-                    }}
-                >
-                    <Button
-                        variant="outlined"
-                        startIcon={<FolderOpen />}
-                        onClick={handleShowInFolder}
-                        fullWidth
-                        sx={{
-                            py: 1,
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            textTransform: 'none',
-                            borderColor: '#D1D5DB',
-                            color: '#1F2937',
-                            '&:hover': {
-                                borderColor: '#9CA3AF',
-                                bgcolor: '#F9FAFB',
-                            },
-                        }}
-                    >
-                        Mostrar en carpeta
-                    </Button>
-                    <Button
-                        variant="contained"
-                        startIcon={<OpenInNew />}
-                        onClick={handleOpenFile}
-                        fullWidth
-                        sx={{
-                            py: 1,
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            textTransform: 'none',
-                            bgcolor: '#10b981',
-                            '&:hover': {
-                                bgcolor: '#059669',
-                            },
-                        }}
-                    >
-                        Abrir archivo
-                    </Button>
-                </DialogActions>
-            </Dialog>
-        </>
-    )
-}
+                onClose={() => setDownloadDialog({ open: false, filename: '', savedPath: '' })}
+                filename={downloadDialog.filename}
+                savedPath={downloadDialog.savedPath}
+                onOpenFile={async () => { try { await openPath(downloadDialog.savedPath); } catch (e) { console.error(e); } }}
+                onShowInFolder={async () => { try { await revealItemInDir(downloadDialog.savedPath); } catch (e) { console.error(e); } }}
+            />
+        </div>
+    );
+};

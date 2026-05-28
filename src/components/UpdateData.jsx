@@ -1,223 +1,112 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { invoke } from '@tauri-apps/api/core';
-import {
-    Box,
-    Button,
-    Typography,
-    Alert,
-    CircularProgress,
-    Paper,
-    Stack,
-    styled
-} from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
-import CloseIcon from '@mui/icons-material/Close';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import { UploadCloud, File, X, CheckCircle } from 'lucide-react';
+import { Button, Alert, Spinner } from './ui';
 import { URI_API } from '../config/api';
-import { colorTokens } from '../theme';
-
-const DropZone = styled(Box)(({ theme, isDragging }) => ({
-    border: `1px dashed ${isDragging ? colorTokens.support : colorTokens.borderStrong}`,
-    borderRadius: theme.spacing(1.5),
-    padding: theme.spacing(6),
-    textAlign: 'center',
-    backgroundColor: isDragging ? alpha(colorTokens.support, 0.08) : colorTokens.surfaceMuted,
-    transition: 'all 0.25s ease',
-    cursor: 'pointer',
-    '&:hover': {
-        borderColor: colorTokens.support,
-        backgroundColor: alpha(colorTokens.support, 0.08),
-    },
-}));
 
 export const UpdateData = () => {
-    const [file, setFile] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [message, setMessage] = useState({ type: '', text: '' });
-    const [isDragging, setIsDragging] = useState(false);
+    const [file, setFile]           = useState(null);
+    const [loading, setLoading]     = useState(false);
+    const [message, setMessage]     = useState({ type:'', text:'' });
+    const [isDragging, setDragging] = useState(false);
 
-    const handleFileChange = (selectedFile) => {
-        if (!selectedFile) return;
-
-        if (!selectedFile.name.endsWith('.csv')) {
-            setMessage({ type: 'error', text: 'Por favor selecciona un archivo CSV vÃ¡lido' });
-            return;
-        }
-
-        if (selectedFile.size > 25 * 1024 * 1024) {
-            setMessage({ type: 'error', text: 'El archivo excede el tamaÃ±o mÃ¡ximo de 25 MB' });
-            return;
-        }
-
-        setFile(selectedFile);
-        setMessage({ type: '', text: '' });
+    const handleFileChange = (f) => {
+        if (!f) return;
+        if (!f.name.endsWith('.csv'))       { setMessage({ type:'error', text:'Selecciona un archivo CSV válido' }); return; }
+        if (f.size > 25*1024*1024)          { setMessage({ type:'error', text:'El archivo excede 25 MB' }); return; }
+        setFile(f); setMessage({ type:'', text:'' });
     };
 
-    const handleDragOver = (e) => {
-        e.preventDefault();
-        setIsDragging(true);
-    };
-
-    const handleDragLeave = (e) => {
-        e.preventDefault();
-        setIsDragging(false);
-    };
-
-    const handleDrop = (e) => {
-        e.preventDefault();
-        setIsDragging(false);
-        handleFileChange(e.dataTransfer.files[0]);
-    };
-
-    const handleInputChange = (event) => {
-        handleFileChange(event.target.files[0]);
-    };
-
-    const removeFile = () => {
-        setFile(null);
-        setMessage({ type: '', text: '' });
-    };
+    const handleDrop = (e) => { e.preventDefault(); setDragging(false); handleFileChange(e.dataTransfer.files[0]); };
 
     const executeReport = async () => {
         try {
-            setLoading(true);
-            setMessage({ type: 'info', text: 'Consultando base de datos local...' });
-
+            setLoading(true); setMessage({ type:'info', text:'Consultando base de datos local...' });
             let dbData = null;
             try {
                 dbData = await invoke('query_database');
-                setMessage({
-                    type: 'info',
-                    text: `âœ… ${dbData.length} registros obtenidos. Enviando al servidor...`
-                });
-            } catch (error) {
-                console.error('Error consultando BD:', error);
-                setMessage({
-                    type: 'warning',
-                    text: `âš ï¸ No se pudo consultar la BD: ${error}. Continuando solo con archivo CSV...`
-                });
+                setMessage({ type:'info', text:`✅ ${dbData.length} registros obtenidos. Enviando al servidor...` });
+            } catch (e) {
+                setMessage({ type:'warning', text:`⚠️ No se pudo consultar la BD: ${e}. Continuando con CSV...` });
             }
-
-            const formData = new FormData();
-            if (file) formData.append('file', file);
-            if (dbData) formData.append('ventas_data', JSON.stringify(dbData));
-
-            if (!file && !dbData) {
-                setMessage({ type: 'error', text: 'No se pudo obtener datos ni del archivo ni de la base de datos' });
-                setLoading(false);
-                return;
-            }
-
-            const response = await axios.post(`${URI_API}/invoices/execute_report`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
-
-            setMessage({
-                type: 'success',
-                text: response.data.message || 'âœ… Reporte generado exitosamente'
-            });
+            const fd = new FormData();
+            if (file)   fd.append('file', file);
+            if (dbData) fd.append('ventas_data', JSON.stringify(dbData));
+            if (!file && !dbData) { setMessage({ type:'error', text:'No hay datos disponibles' }); setLoading(false); return; }
+            const r = await axios.post(`${URI_API}/invoices/execute_report`, fd, { headers:{ 'Content-Type':'multipart/form-data' } });
+            setMessage({ type:'success', text: r.data.message || '✅ Reporte generado exitosamente' });
             setFile(null);
-        } catch (error) {
-            setMessage({
-                type: 'error',
-                text: error.response?.data?.detail || error.message || 'Error al actualizar los datos'
-            });
-            console.error(error);
-        } finally {
-            setLoading(false);
-        }
+        } catch (e) {
+            setMessage({ type:'error', text: e.response?.data?.detail || e.message || 'Error al actualizar' });
+        } finally { setLoading(false); }
     };
 
     return (
-        <Box sx={{ maxWidth: 760, mx: 'auto', mt: 4, p: 3 }}>
-            <Paper sx={{ p: 5, borderRadius: 3 }}>
-                <Typography variant="h5" component="h2" fontWeight={600} gutterBottom color={colorTokens.brand}>
-                    Actualizar Datos de Invoices
-                </Typography>
+        <div className="max-w-[680px] mx-auto">
+            <div className="mb-5">
+                <h2 className="text-[15px] font-[700] text-n-900">Actualizar Datos de Invoices</h2>
+                <p className="text-[12.5px] text-n-500 mt-1">
+                    Sube el reporte CSV desde Bitrix (opcional). Al iniciar el proceso, la app también consultará la base de datos local.
+                </p>
+            </div>
 
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-                    Sube el reporte actualizado desde Bitrix de forma opcional. Al iniciar el proceso, la app tambiÃ©n consultarÃ¡ la base de datos local.
-                </Typography>
-
-                <Stack spacing={3}>
-                    {!file ? (
-                        <DropZone
-                            isDragging={isDragging}
-                            onDragOver={handleDragOver}
-                            onDragLeave={handleDragLeave}
-                            onDrop={handleDrop}
-                        >
-                            <CloudUploadIcon sx={{ fontSize: 60, color: isDragging ? colorTokens.action : colorTokens.textSecondary, mb: 2 }} />
-
-                            <Typography variant="h6" gutterBottom fontWeight={600} color={colorTokens.textPrimary}>
-                                Arrastra y suelta el archivo aquÃ­
-                            </Typography>
-
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                TamaÃ±o mÃ¡ximo: 25 MB • Formato: CSV
-                            </Typography>
-
-                            <Typography variant="caption" color="text.secondary" sx={{ mb: 3, display: 'block' }}>
-                                Si no subes un archivo, se intentarÃ¡ trabajar con la informaciÃ³n disponible localmente.
-                            </Typography>
-
-                            <Button component="label" variant="outlined" disabled={loading} sx={{ px: 4, py: 1 }}>
+            <div className="flex flex-col gap-4">
+                {/* Drop zone */}
+                {!file ? (
+                    <div
+                        onDragOver={e=>{e.preventDefault();setDragging(true);}}
+                        onDragLeave={e=>{e.preventDefault();setDragging(false);}}
+                        onDrop={handleDrop}
+                        className={`border-2 border-dashed rounded-[10px] p-10 text-center cursor-pointer transition-all duration-200
+                            ${isDragging ? 'border-brand-400 bg-brand-50' : 'border-n-200 bg-n-25 hover:border-brand-300 hover:bg-brand-50/40'}`}
+                    >
+                        <UploadCloud size={44} className={`mx-auto mb-3 ${isDragging ? 'text-brand-600' : 'text-n-400'}`} />
+                        <div className="text-[14px] font-[600] text-n-900 mb-1">Arrastra y suelta el archivo aquí</div>
+                        <div className="text-[12.5px] text-n-500 mb-1">Tamaño máximo: 25 MB · Formato: CSV</div>
+                        <div className="text-[12px] text-n-400 mb-4">Si no subes archivo, se usará la información de la BD local.</div>
+                        <label>
+                            <Button variant="secondary" disabled={loading} className="cursor-pointer">
                                 Buscar Archivo
-                                <input type="file" hidden accept=".csv" onChange={handleInputChange} />
                             </Button>
-                        </DropZone>
-                    ) : (
-                        <Paper sx={{ p: 3, borderRadius: 2, backgroundColor: colorTokens.surfaceMuted }}>
-                            <Stack direction="row" alignItems="center" spacing={2}>
-                                <Box sx={{ p: 1.5, backgroundColor: alpha(colorTokens.info, 0.10), borderRadius: 2, display: 'flex' }}>
-                                    <InsertDriveFileIcon sx={{ color: colorTokens.info, fontSize: 30 }} />
-                                </Box>
+                            <input type="file" className="hidden" accept=".csv" onChange={e=>handleFileChange(e.target.files[0])} />
+                        </label>
+                    </div>
+                ) : (
+                    /* File preview */
+                    <div className="flex items-center gap-3 p-3 bg-n-50 border border-n-200 rounded-[8px]">
+                        <div className="w-10 h-10 rounded-[8px] bg-brand-50 border border-brand-100 flex items-center justify-center shrink-0">
+                            <File size={20} className="text-brand-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-[600] text-n-900 truncate">{file.name}</div>
+                            <div className="text-[11.5px] text-n-500">{(file.size/1024).toFixed(2)} KB</div>
+                        </div>
+                        <CheckCircle size={18} className="text-green-500 shrink-0" />
+                        <button onClick={()=>{setFile(null);setMessage({type:'',text:''}); }} disabled={loading}
+                            className="p-1 rounded hover:bg-n-100 text-n-400 hover:text-n-700 transition-colors disabled:opacity-40">
+                            <X size={15} />
+                        </button>
+                    </div>
+                )}
 
-                                <Box sx={{ flexGrow: 1 }}>
-                                    <Typography variant="body1" fontWeight={600}>
-                                        {file.name}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                        {(file.size / 1024).toFixed(2)} KB
-                                    </Typography>
-                                </Box>
+                {/* Message */}
+                {message.text && (
+                    <Alert severity={message.type||'info'} onClose={()=>setMessage({type:'',text:''})}>
+                        {message.text}
+                    </Alert>
+                )}
 
-                                <CheckCircleIcon sx={{ color: colorTokens.accentTeal, fontSize: 28 }} />
-
-                                <Button size="small" onClick={removeFile} disabled={loading} sx={{ minWidth: 'auto', p: 0.5 }}>
-                                    <CloseIcon />
-                                </Button>
-                            </Stack>
-                        </Paper>
-                    )}
-
-                    {message.text && (
-                        <Alert severity={message.type} onClose={() => setMessage({ type: '', text: '' })}>
-                            {message.text}
-                        </Alert>
-                    )}
-
-                    <Stack direction="row" spacing={2} justifyContent="flex-end">
-                        <Button variant="outlined" onClick={removeFile} disabled={loading || !file} sx={{ px: 4, py: 1.5 }}>
-                            Cancelar
-                        </Button>
-
-                        <Button variant="contained" onClick={executeReport} disabled={loading} sx={{ px: 4, py: 1.5 }}>
-                            {loading ? (
-                                <>
-                                    <CircularProgress size={20} sx={{ mr: 1, color: 'inherit' }} />
-                                    Procesando...
-                                </>
-                            ) : (
-                                'Actualizar Datos'
-                            )}
-                        </Button>
-                    </Stack>
-                </Stack>
-            </Paper>
-        </Box>
+                {/* Actions */}
+                <div className="flex justify-end gap-2">
+                    <Button variant="secondary" onClick={()=>{setFile(null);setMessage({type:'',text:''}); }} disabled={loading||!file}>
+                        Cancelar
+                    </Button>
+                    <Button variant="primary" onClick={executeReport} disabled={loading}>
+                        {loading ? <><Spinner size={14} className="text-white mr-1.5" />Procesando...</> : 'Actualizar Datos'}
+                    </Button>
+                </div>
+            </div>
+        </div>
     );
 };

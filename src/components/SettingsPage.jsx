@@ -1,658 +1,311 @@
 import { useState, useEffect } from 'react';
-import {
-    Box,
-    Paper,
-    Typography,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    IconButton,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    TextField,
-    Button,
-    MenuItem,
-    Chip,
-    Alert,
-    Snackbar,
-    Tooltip,
-    CircularProgress,
-    Tabs,
-    Tab,
-    TablePagination,
-    InputAdornment
-} from '@mui/material';
-import { colorTokens } from '../theme';
-import {
-    Edit as EditIcon,
-    Delete as DeleteIcon,
-    Add as AddIcon,
-    Refresh as RefreshIcon,
-    Save as SaveIcon,
-    People as PeopleIcon,
-    Receipt as ReceiptIcon,
-    Search as SearchIcon
-} from '@mui/icons-material';
 import axios from 'axios';
+import { Search, Plus, Edit2, Trash2, RefreshCw, Users, FileText, Database } from 'lucide-react';
+import { Button, IconButton, Input, Select, Modal, Alert, Badge, Spinner, Tabs, EmptyState } from './ui';
 import { FacturasViewer } from './FacturasViewer';
 import { UpdateData } from './UpdateData';
-
 import { URI_API } from '../config/api';
+
 const API_URL = URI_API;
-
 const UNIDADES_NEGOCIO = ['-', 'UNAU', 'UNAI', 'UNVA'];
+const UNColors = { 'UNAU': 'brand', 'UNAI': 'teal', 'UNVA': 'amber', '-': 'default' };
 
-function TabPanel({ children, value, index, ...other }) {
+const formatCurrency = (v) =>
+    new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'USD' }).format(v ?? 0);
+
+/* ── Pagination helpers ─────────────────────────────────── */
+function Pagination({ page, rowsPerPage, total, onPage, onRowsPerPage }) {
+    const totalPages = Math.ceil(total / rowsPerPage);
     return (
-        <div
-            role="tabpanel"
-            hidden={value !== index}
-            id={`settings-tabpanel-${index}`}
-            aria-labelledby={`settings-tab-${index}`}
-            {...other}
-        >
-            {value === index && (
-                <Box sx={{ py: 3 }}>
-                    {children}
-                </Box>
-            )}
+        <div className="flex items-center justify-between px-4 py-2 border-t border-n-150 text-[12px] text-n-600">
+            <div className="flex items-center gap-2">
+                <span>Filas:</span>
+                <Select
+                    value={rowsPerPage}
+                    onChange={v => onRowsPerPage(Number(v))}
+                    options={[5, 10, 15, 25, 50].map(v => ({ value: v, label: String(v) }))}
+                    size="sm"
+                    className="w-[72px]"
+                />
+            </div>
+            <div className="flex items-center gap-3">
+                <span>{page * rowsPerPage + 1}–{Math.min((page + 1) * rowsPerPage, total)} de {total}</span>
+                <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => onPage(page - 1)}>‹</Button>
+                    <Button variant="ghost" size="sm" disabled={page >= totalPages - 1} onClick={() => onPage(page + 1)}>›</Button>
+                </div>
+            </div>
         </div>
     );
 }
 
 export const SettingsPage = () => {
-    const [vendedores, setVendedores] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [openDialog, setOpenDialog] = useState(false);
+    const [vendedores, setVendedores]     = useState([]);
+    const [loading, setLoading]           = useState(true);
+    const [openDialog, setOpenDialog]     = useState(false);
     const [editingVendedor, setEditingVendedor] = useState(null);
-    const [isSaving, setIsSaving] = useState(false);
-    const [formData, setFormData] = useState({
-        nombre: '',
-        meta_mensual: '',
-        porcentaje_umbral: 80,
-        unidad_negocio: 'UNAU'
-    });
-    const [snackbar, setSnackbar] = useState({
-        open: false,
-        message: '',
-        severity: 'success'
-    });
+    const [isSaving, setIsSaving]         = useState(false);
+    const [formData, setFormData]         = useState({ nombre: '', meta_mensual: '', porcentaje_umbral: 80, unidad_negocio: 'UNAU' });
+    const [toast, setToast]               = useState(null);
     const [recalculando, setRecalculando] = useState(false);
-    const [tabValue, setTabValue] = useState(0);
-    const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(10);
-    const [searchTerm, setSearchTerm] = useState('');
+    const [tabValue, setTabValue]         = useState('vendedores');
+    const [page, setPage]                 = useState(0);
+    const [rowsPerPage, setRowsPerPage]   = useState(15);
+    const [searchTerm, setSearchTerm]     = useState('');
 
-    useEffect(() => {
-        fetchVendedores();
-    }, []);
+    useEffect(() => { fetchVendedores(); }, []);
 
     const fetchVendedores = async () => {
         try {
             setLoading(true);
-            const response = await axios.get(`${API_URL}/vendedores`);
-            setVendedores(response.data);
-        } catch (error) {
-            showSnackbar('Error al cargar vendedores', 'error');
-            console.error('Error:', error);
-        } finally {
-            setLoading(false);
-        }
+            const r = await axios.get(`${API_URL}/vendedores`);
+            setVendedores(r.data);
+        } catch { showToast('Error al cargar vendedores', 'error'); }
+        finally { setLoading(false); }
     };
 
-    const showSnackbar = (message, severity = 'success') => {
-        setSnackbar({ open: true, message, severity });
+    const showToast = (msg, type = 'success') => {
+        setToast({ msg, type });
+        setTimeout(() => setToast(null), 4000);
     };
 
-    const handleCloseSnackbar = () => {
-        setSnackbar({ ...snackbar, open: false });
-    };
-
-    const handleTabChange = (event, newValue) => {
-        setTabValue(newValue);
-    };
-
-    const handleChangePage = (event, newPage) => {
-        setPage(newPage);
-    };
-
-    const handleChangeRowsPerPage = (event) => {
-        setRowsPerPage(parseInt(event.target.value, 10));
-        setPage(0);
-    };
-
-    const handleSearchChange = (event) => {
-        setSearchTerm(event.target.value);
-        setPage(0); // Resetear a la primera página al buscar
-    };
-
-    const handleOpenDialog = (vendedor = null) => {
-        if (vendedor) {
-            setEditingVendedor(vendedor);
-            setFormData({
-                nombre: vendedor.nombre,
-                meta_mensual: vendedor.meta_mensual,
-                porcentaje_umbral: vendedor.porcentaje_umbral,
-                unidad_negocio: vendedor.unidad_negocio
-            });
-        } else {
-            setEditingVendedor(null);
-            setFormData({
-                nombre: '',
-                meta_mensual: '',
-                porcentaje_umbral: 80,
-                unidad_negocio: 'UNAU'
-            });
-        }
+    const handleOpenDialog = (v = null) => {
+        setEditingVendedor(v);
+        setFormData(v
+            ? { nombre: v.nombre, meta_mensual: v.meta_mensual, porcentaje_umbral: v.porcentaje_umbral, unidad_negocio: v.unidad_negocio }
+            : { nombre: '', meta_mensual: '', porcentaje_umbral: 80, unidad_negocio: 'UNAU' }
+        );
         setOpenDialog(true);
-    };
-
-    const handleCloseDialog = () => {
-        setOpenDialog(false);
-        setEditingVendedor(null);
-    };
-
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
     };
 
     const handleSave = async () => {
         try {
             setIsSaving(true);
             if (editingVendedor) {
-                // Actualizar
-                await axios.put(
-                    `${API_URL}/vendedores/${editingVendedor.id}`,
-                    {
-                        meta_mensual: parseFloat(formData.meta_mensual),
-                        porcentaje_umbral: parseFloat(formData.porcentaje_umbral),
-                        unidad_negocio: formData.unidad_negocio
-                    }
-                );
-                showSnackbar('Vendedor actualizado correctamente');
+                await axios.put(`${API_URL}/vendedores/${editingVendedor.id}`, {
+                    meta_mensual: parseFloat(formData.meta_mensual),
+                    porcentaje_umbral: parseFloat(formData.porcentaje_umbral),
+                    unidad_negocio: formData.unidad_negocio,
+                });
+                showToast('Vendedor actualizado');
             } else {
-                // Crear
                 await axios.post(`${API_URL}/vendedores`, {
                     nombre: formData.nombre,
                     meta_mensual: parseFloat(formData.meta_mensual),
                     porcentaje_umbral: parseFloat(formData.porcentaje_umbral),
-                    unidad_negocio: formData.unidad_negocio
+                    unidad_negocio: formData.unidad_negocio,
                 });
-                showSnackbar('Vendedor creado correctamente');
+                showToast('Vendedor creado');
             }
-
-            handleCloseDialog();
+            setOpenDialog(false);
             fetchVendedores();
-        } catch (error) {
-            showSnackbar(
-                error.response?.data?.detail || 'Error al guardar vendedor',
-                'error'
-            );
-            console.error('Error:', error);
-        } finally {
-            setIsSaving(false);
-        }
+        } catch (err) {
+            showToast(err.response?.data?.detail || 'Error al guardar', 'error');
+        } finally { setIsSaving(false); }
     };
 
     const handleDelete = async (id, nombre) => {
-        if (window.confirm(`¿Estás seguro de eliminar a ${nombre}?`)) {
-            try {
-                await axios.delete(`${API_URL}/vendedores/${id}`);
-                showSnackbar('Vendedor eliminado correctamente');
-                fetchVendedores();
-            } catch (error) {
-                showSnackbar('Error al eliminar vendedor', 'error');
-                console.error('Error:', error);
-            }
-        }
+        if (!window.confirm(`¿Eliminar a ${nombre}?`)) return;
+        try {
+            await axios.delete(`${API_URL}/vendedores/${id}`);
+            showToast('Vendedor eliminado');
+            fetchVendedores();
+        } catch { showToast('Error al eliminar', 'error'); }
     };
 
-    const handleRecalcularComisiones = async () => {
-        if (window.confirm('¿Estás seguro de recalcular todas las comisiones? Este proceso puede tardar varios segundos.')) {
-            try {
-                setRecalculando(true);
-                await axios.post(`${API_URL}/recalcular-comisiones`);
-                showSnackbar('Comisiones recalculadas correctamente');
-            } catch (error) {
-                showSnackbar('Error al recalcular comisiones', 'error');
-                console.error('Error:', error);
-            } finally {
-                setRecalculando(false);
-            }
-        }
+    const handleRecalcular = async () => {
+        if (!window.confirm('¿Recalcular todas las comisiones?')) return;
+        try {
+            setRecalculando(true);
+            await axios.post(`${API_URL}/recalcular-comisiones`);
+            showToast('Comisiones recalculadas');
+        } catch { showToast('Error al recalcular', 'error'); }
+        finally { setRecalculando(false); }
     };
 
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat('es-PE', {
-            style: 'currency',
-            currency: 'USD'
-        }).format(value);
-    };
+    const filtered   = vendedores.filter(v => v.nombre.toLowerCase().includes(searchTerm.toLowerCase()));
+    const paginated  = filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+    const umbralM    = formData.meta_mensual && formData.porcentaje_umbral
+        ? (formData.meta_mensual * formData.porcentaje_umbral / 100) : null;
 
-    // Filtrar vendedores por búsqueda
-    const filteredVendedores = vendedores.filter(vendedor =>
-        vendedor.nombre.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-    // Calcular vendedores paginados
-    const paginatedVendedores = filteredVendedores.slice(
-        page * rowsPerPage,
-        page * rowsPerPage + rowsPerPage
-    );
-
-    if (loading) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
-                <CircularProgress />
-            </Box>
-        );
-    }
+    const TABS = [
+        { value: 'vendedores', label: 'Vendedores',    icon: Users },
+        { value: 'facturas',   label: 'Facturas',      icon: FileText },
+        { value: 'carga',      label: 'Carga de Datos', icon: Database },
+    ];
 
     return (
-        <Box sx={{ p: { xs: 2, md: 4 }, bgcolor: 'background.default', minHeight: '100vh' }}>
-            <Box sx={{ mb: 3 }}>
-                <Typography variant="h5" sx={{ color: colorTokens.brand, mb: 0.5 }}>
-                    ConfiguraciÃ³n
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                    Administra vendedores, facturas y procesos de carga con una interfaz consistente.
-                </Typography>
-            </Box>
-            {/* Tabs */}
-            <Paper
-                elevation={0}
-                sx={{
-                    borderRadius: 3,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    overflow: 'hidden'
-                }}
-            >
-                <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                    <Tabs
-                        variant='fullWidth'
-                        value={tabValue}
-                        onChange={handleTabChange}
-                        sx={{
-                            px: 2,
-                            '& .MuiTab-root': {
-                                textTransform: 'none',
-                                fontWeight: 600,
-                                fontSize: '0.95rem',
-                                minHeight: 56
-                            }
-                        }}
-                    >
-                        <Tab
-                            icon={<PeopleIcon />}
-                            iconPosition="start"
-                            label="Vendedores"
-                        />
-                        <Tab
-                            icon={<ReceiptIcon />}
-                            iconPosition="start"
-                            label="Facturas"
-                        />
-                        <Tab
-                            icon={<ReceiptIcon />}
-                            iconPosition="start"
-                            label="Carga de Datos"
-                        />
-                    </Tabs>
-                </Box>
-                <TabPanel value={tabValue} index={0}>
-                    <Box sx={{ px: 3 }}>
-                        {/* Barra de búsqueda y botones */}
-                        <Box sx={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            mb: 3,
-                            gap: 2
-                        }}>
-                            <TextField
-                                placeholder="Buscar vendedor..."
-                                value={searchTerm}
-                                onChange={handleSearchChange}
-                                size="small"
-                                sx={{
-                                    width: 300,
-                                    '& .MuiOutlinedInput-root': {
-                                        borderRadius: 2
-                                    }
-                                }}
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <SearchIcon color="action" />
-                                        </InputAdornment>
-                                    )
-                                }}
-                            />
-                            <Box sx={{ display: 'flex', gap: 2 }}>
-                                <Tooltip title="Recalcular todas las comisiones">
-                                    <Button
-                                        variant="outlined"
-                                        startIcon={recalculando ? <CircularProgress size={20} /> : <RefreshIcon />}
-                                        onClick={handleRecalcularComisiones}
-                                        disabled={recalculando}
-                                        sx={{
-                                            borderRadius: 2,
-                                            textTransform: 'none',
-                                            fontWeight: 600
-                                        }}
-                                    >
-                                        {recalculando ? 'Recalculando...' : 'Recalcular Comisiones'}
-                                    </Button>
-                                </Tooltip>
-                                <Button
-                                    variant="contained"
-                                    startIcon={<AddIcon />}
-                                    onClick={() => handleOpenDialog()}
-                                    sx={{
-                                        borderRadius: 2,
-                                        textTransform: 'none',
-                                        fontWeight: 600
-                                    }}
-                                >
-                                    Nuevo Vendedor
-                                </Button>
-                            </Box>
-                        </Box>
+        <div className="p-4 md:p-6">
+            {/* Page header */}
+            <div className="mb-5">
+                <h1 className="text-[17px] font-[700] text-n-900 tracking-[-0.014em]">Configuración</h1>
+                <p className="text-[12.5px] text-n-500 mt-0.5">Gestiona vendedores, facturas y carga de datos.</p>
+            </div>
 
-                        {/* Tabla */}
-                        <TableContainer
-                            component={Paper}
-                            elevation={0}
-                            sx={{
-                                borderRadius: 2,
-                                border: '1px solid',
-                                borderColor: 'divider',
-                                overflow: 'hidden'
-                            }}
-                        >
-                            <Table stickyHeader size="small">
-                                <TableHead>
-                                    <TableRow sx={{ bgcolor: 'grey.50' }}>
-                                        <TableCell sx={{ fontWeight: 700, fontSize: '0.875rem', bgcolor: 'grey.50' }}>
-                                            Vendedor
-                                        </TableCell>
-                                        <TableCell sx={{ fontWeight: 700, fontSize: '0.875rem', bgcolor: 'grey.50' }}>
-                                            Meta Mensual
-                                        </TableCell>
-                                        <TableCell sx={{ fontWeight: 700, fontSize: '0.875rem', bgcolor: 'grey.50' }}>
-                                            % Umbral
-                                        </TableCell>
-                                        <TableCell sx={{ fontWeight: 700, fontSize: '0.875rem', bgcolor: 'grey.50' }}>
-                                            Umbral Mensual
-                                        </TableCell>
-                                        <TableCell sx={{ fontWeight: 700, fontSize: '0.875rem', bgcolor: 'grey.50' }}>
-                                            Umbral Trimestral
-                                        </TableCell>
-                                        <TableCell sx={{ fontWeight: 700, fontSize: '0.875rem', bgcolor: 'grey.50' }}>
-                                            Unidad Negocio
-                                        </TableCell>
-                                        <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.875rem', bgcolor: 'grey.50' }}>
-                                            Acciones
-                                        </TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {paginatedVendedores.length > 0 ? (
-                                        paginatedVendedores.map((vendedor) => (
-                                            <TableRow
-                                                key={vendedor.id}
-                                                sx={{
-                                                    '&:hover': { bgcolor: 'action.hover' },
-                                                    transition: 'background-color 0.2s'
-                                                }}
-                                            >
-                                                <TableCell>
-                                                    <Typography variant="body2" fontWeight={600} fontSize="0.8rem" >
-                                                        {vendedor.nombre}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Typography variant="body2" fontWeight={500} fontSize="0.8rem" >
-                                                        {formatCurrency(vendedor.meta_mensual)}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Chip
-                                                        label={`${vendedor.porcentaje_umbral}%`}
-                                                        size="small"
-                                                        sx={{
-                                                            bgcolor: 'primary.50',
-                                                            color: 'primary.700',
-                                                            fontWeight: 600
-                                                        }}
-                                                    />
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Typography variant="body2" color="text.secondary" fontSize="0.8rem" >
-                                                        {formatCurrency(vendedor.umbral_mensual)}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Typography variant="body2" color="text.secondary" fontSize="0.8rem" >
-                                                        {formatCurrency(vendedor.umbral_trimestral)}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Chip
-                                                        label={vendedor.unidad_negocio}
-                                                        size="small"
-                                                        color={
-                                                            vendedor.unidad_negocio === 'UNAU' ? 'primary' :
-                                                                vendedor.unidad_negocio === 'UNAI' ? 'secondary' :
-                                                                    'default'
-                                                        }
-                                                        sx={{ fontWeight: 600 }}
-                                                    />
-                                                </TableCell>
-                                                <TableCell align="center">
-                                                    <Tooltip title="Editar">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleOpenDialog(vendedor)}
-                                                            sx={{
-                                                                color: 'primary.main',
-                                                                '&:hover': { bgcolor: 'primary.50' }
-                                                            }}
-                                                        >
-                                                            <EditIcon fontSize="small" />
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                    <Tooltip title="Eliminar">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleDelete(vendedor.id, vendedor.nombre)}
-                                                            sx={{
-                                                                color: 'error.main',
-                                                                '&:hover': { bgcolor: 'error.50' }
-                                                            }}
-                                                        >
-                                                            <DeleteIcon fontSize="small" />
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {searchTerm ? 'No se encontraron vendedores con ese nombre' : 'No hay vendedores registrados'}
-                                                </Typography>
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                            <TablePagination
-                                rowsPerPageOptions={[5, 10, 25, 50]}
-                                component="div"
-                                count={filteredVendedores.length}
-                                rowsPerPage={rowsPerPage}
-                                page={page}
-                                onPageChange={handleChangePage}
-                                onRowsPerPageChange={handleChangeRowsPerPage}
-                                labelRowsPerPage="Filas por página:"
-                                labelDisplayedRows={({ from, to, count }) =>
-                                    `${from}-${to} de ${count !== -1 ? count : `más de ${to}`}`
-                                }
-                                sx={{
-                                    borderTop: '1px solid',
-                                    borderColor: 'divider',
-                                    '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': {
-                                        fontSize: '0.875rem'
-                                    }
-                                }}
-                            />
-                        </TableContainer>
-                    </Box>
-                </TabPanel>
-
-                {/* Panel de Facturas */}
-                <TabPanel value={tabValue} index={1}>
-                    <Box sx={{ px: 3 }}>
-                        <FacturasViewer />
-                    </Box>
-                </TabPanel>
-                <TabPanel value={tabValue} index={2}>
-                    <Box sx={{ px: 3 }}>
-                        <UpdateData />
-                    </Box>
-                </TabPanel>
-            </Paper>
-
-            {/* Dialog */}
-            <Dialog
-                open={openDialog}
-                onClose={handleCloseDialog}
-                maxWidth="sm"
-                fullWidth
-                PaperProps={{
-                    sx: { borderRadius: 3 }
-                }}
-            >
-                <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
-                    {editingVendedor ? 'Editar Vendedor' : 'Nuevo Vendedor'}
-                </DialogTitle>
-                <DialogContent>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 2 }}>
-                        <TextField
-                            label="Nombre Completo"
-                            name="nombre"
-                            value={formData.nombre}
-                            onChange={handleInputChange}
-                            fullWidth
-                            disabled={!!editingVendedor}
-                            required
-                        />
-                        <TextField
-                            label="Meta Mensual (USD)"
-                            name="meta_mensual"
-                            type="number"
-                            value={formData.meta_mensual}
-                            onChange={handleInputChange}
-                            fullWidth
-                            required
-                            InputProps={{
-                                startAdornment: <Typography sx={{ mr: 1 }}>$</Typography>
-                            }}
-                        />
-                        <TextField
-                            label="Porcentaje Umbral"
-                            name="porcentaje_umbral"
-                            type="number"
-                            value={formData.porcentaje_umbral}
-                            onChange={handleInputChange}
-                            fullWidth
-                            required
-                            InputProps={{
-                                endAdornment: <Typography sx={{ ml: 1 }}>%</Typography>
-                            }}
-                        />
-                        <TextField
-                            label="Unidad de Negocio"
-                            name="unidad_negocio"
-                            select
-                            value={formData.unidad_negocio}
-                            onChange={handleInputChange}
-                            fullWidth
-                            required
-                        >
-                            {UNIDADES_NEGOCIO.map(unidad => (
-                                <MenuItem key={unidad} value={unidad}>
-                                    {unidad}
-                                </MenuItem>
-                            ))}
-                        </TextField>
-
-                        {formData.meta_mensual && formData.porcentaje_umbral && (
-                            <Alert severity="info" sx={{ borderRadius: 2 }}>
-                                <Typography variant="body2" fontWeight={600} gutterBottom>
-                                    Umbrales calculados:
-                                </Typography>
-                                <Typography variant="body2">
-                                    • Umbral Mensual: {formatCurrency(formData.meta_mensual * formData.porcentaje_umbral / 100)}
-                                </Typography>
-                                <Typography variant="body2">
-                                    • Umbral Trimestral: {formatCurrency(formData.meta_mensual * formData.porcentaje_umbral / 100 * 3)}
-                                </Typography>
-                            </Alert>
-                        )}
-                    </Box>
-                </DialogContent>
-                <DialogActions sx={{ p: 3, pt: 2 }}>
-                    <Button
-                        onClick={handleCloseDialog}
-                        sx={{ textTransform: 'none' }}
-                    >
-                        Cancelar
-                    </Button>
-                    <Button
-                        onClick={handleSave}
-                        variant="contained"
-                        startIcon={<SaveIcon />}
-                        disabled={!formData.nombre || !formData.meta_mensual || !formData.porcentaje_umbral || isSaving}
-                        sx={{
-                            bgcolor: colorTokens.action,
-                            '&:hover': {
-                                bgcolor: colorTokens.support
-                            }
-                        }}
-                    >
-                        {isSaving ? 'Guardando...' : (editingVendedor ? 'Actualizar' : 'Crear')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Snackbar */}
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={4000}
-                onClose={handleCloseSnackbar}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            >
-                <Alert
-                    onClose={handleCloseSnackbar}
-                    severity={snackbar.severity}
-                    sx={{ borderRadius: 2 }}
-                >
-                    {snackbar.message}
+            {/* Toast */}
+            {toast && (
+                <Alert severity={toast.type === 'error' ? 'error' : 'success'} onClose={() => setToast(null)} className="mb-4">
+                    {toast.msg}
                 </Alert>
-            </Snackbar>
-        </Box>
+            )}
+
+            {/* Card */}
+            <div className="card overflow-hidden">
+                <Tabs tabs={TABS} value={tabValue} onChange={v => { setTabValue(v); setPage(0); }} />
+
+                {/* ── Tab: Vendedores ─────────────────────────── */}
+                {tabValue === 'vendedores' && (
+                    <div className="p-5">
+                        {/* Toolbar */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                            <Input
+                                icon={Search}
+                                value={searchTerm}
+                                onChange={v => { setSearchTerm(v); setPage(0); }}
+                                placeholder="Buscar vendedor..."
+                                className="w-full sm:w-[260px]"
+                            />
+                            <div className="flex gap-2 flex-wrap">
+                                <Button variant="secondary" icon={recalculando ? () => <Spinner size={13} /> : RefreshCw} onClick={handleRecalcular} disabled={recalculando}>
+                                    {recalculando ? 'Recalculando...' : 'Recalcular'}
+                                </Button>
+                                <Button variant="primary" icon={Plus} onClick={() => handleOpenDialog()}>Nuevo Vendedor</Button>
+                            </div>
+                        </div>
+
+                        {loading ? (
+                            <div className="flex justify-center py-12"><Spinner size={32} /></div>
+                        ) : (
+                            <div className="border border-n-150 rounded-[8px] overflow-hidden">
+                                <div className="overflow-x-auto">
+                                <table className="w-full text-[12.5px] min-w-[680px]">
+                                    <thead>
+                                        <tr className="bg-n-50 border-b border-n-150">
+                                            {['Vendedor','Meta Mensual','% Umbral','Umbral Mensual','Umbral Trimestral','Unidad Neg.',''].map(h => (
+                                                <th key={h} className="px-3 py-2.5 text-left font-[700] text-n-600 whitespace-nowrap">{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {paginated.length === 0 ? (
+                                            <tr><td colSpan={7}>
+                                                <EmptyState icon={Users} title="Sin vendedores" description={searchTerm ? 'No se encontraron resultados' : 'Agrega el primer vendedor'} />
+                                            </td></tr>
+                                        ) : paginated.map(v => (
+                                            <tr key={v.id} className="border-b border-n-100 hover:bg-n-50 transition-colors">
+                                                <td className="px-3 py-2.5 font-[600] text-n-900">{v.nombre}</td>
+                                                <td className="px-3 py-2.5 mono tnum text-n-700">{formatCurrency(v.meta_mensual)}</td>
+                                                <td className="px-3 py-2.5">
+                                                    <Badge color="brand">{v.porcentaje_umbral}%</Badge>
+                                                </td>
+                                                <td className="px-3 py-2.5 mono tnum text-n-500">{formatCurrency(v.umbral_mensual)}</td>
+                                                <td className="px-3 py-2.5 mono tnum text-n-500">{formatCurrency(v.umbral_trimestral)}</td>
+                                                <td className="px-3 py-2.5">
+                                                    <Badge color={UNColors[v.unidad_negocio] || 'default'}>{v.unidad_negocio}</Badge>
+                                                </td>
+                                                <td className="px-3 py-2.5">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <IconButton icon={Edit2} size={26} onClick={() => handleOpenDialog(v)} title="Editar" />
+                                                        <IconButton icon={Trash2} size={26} onClick={() => handleDelete(v.id, v.nombre)} title="Eliminar" danger />
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                </div>
+                                <Pagination page={page} rowsPerPage={rowsPerPage} total={filtered.length} onPage={setPage} onRowsPerPage={v => { setRowsPerPage(v); setPage(0); }} />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ── Tab: Facturas ─────────────────────────── */}
+                {tabValue === 'facturas' && (
+                    <div className="p-5"><FacturasViewer /></div>
+                )}
+
+                {/* ── Tab: Carga ───────────────────────────── */}
+                {tabValue === 'carga' && (
+                    <div className="p-5"><UpdateData /></div>
+                )}
+            </div>
+
+            {/* ── Modal: Add/Edit Vendedor ─────────────────── */}
+            <Modal
+                open={openDialog}
+                onClose={() => setOpenDialog(false)}
+                title={editingVendedor ? 'Editar Vendedor' : 'Nuevo Vendedor'}
+                width={440}
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setOpenDialog(false)}>Cancelar</Button>
+                        <Button
+                            variant="primary"
+                            onClick={handleSave}
+                            disabled={!formData.nombre || !formData.meta_mensual || !formData.porcentaje_umbral || isSaving}
+                        >
+                            {isSaving ? 'Guardando...' : (editingVendedor ? 'Actualizar' : 'Crear')}
+                        </Button>
+                    </>
+                }
+            >
+                <div className="flex flex-col gap-3.5">
+                    {/* Nombre */}
+                    <div>
+                        <label className="block text-[11.5px] font-[600] text-n-600 mb-1">Nombre Completo</label>
+                        <Input
+                            value={formData.nombre}
+                            onChange={v => setFormData(f => ({ ...f, nombre: v }))}
+                            placeholder="Nombre del vendedor"
+                            disabled={!!editingVendedor}
+                        />
+                    </div>
+                    {/* Meta */}
+                    <div>
+                        <label className="block text-[11.5px] font-[600] text-n-600 mb-1">Meta Mensual (USD)</label>
+                        <div className="ring-focus flex items-center bg-n-0 border border-n-200 rounded-[6px] h-[32px] px-[10px] transition-all">
+                            <span className="text-n-500 text-[12.5px] mr-2">$</span>
+                            <input
+                                type="number"
+                                value={formData.meta_mensual}
+                                onChange={e => setFormData(f => ({ ...f, meta_mensual: e.target.value }))}
+                                className="flex-1 bg-transparent border-none outline-none text-[13px] text-n-900"
+                            />
+                        </div>
+                    </div>
+                    {/* Umbral */}
+                    <div>
+                        <label className="block text-[11.5px] font-[600] text-n-600 mb-1">Porcentaje Umbral</label>
+                        <div className="ring-focus flex items-center bg-n-0 border border-n-200 rounded-[6px] h-[32px] px-[10px] transition-all">
+                            <input
+                                type="number"
+                                value={formData.porcentaje_umbral}
+                                onChange={e => setFormData(f => ({ ...f, porcentaje_umbral: e.target.value }))}
+                                className="flex-1 bg-transparent border-none outline-none text-[13px] text-n-900"
+                            />
+                            <span className="text-n-500 text-[12.5px] ml-2">%</span>
+                        </div>
+                    </div>
+                    {/* Unidad */}
+                    <div>
+                        <label className="block text-[11.5px] font-[600] text-n-600 mb-1">Unidad de Negocio</label>
+                        <Select
+                            value={formData.unidad_negocio}
+                            onChange={v => setFormData(f => ({ ...f, unidad_negocio: v }))}
+                            options={UNIDADES_NEGOCIO.map(u => ({ value: u, label: u }))}
+                        />
+                    </div>
+                    {/* Calculated preview */}
+                    {umbralM && (
+                        <div className="bg-brand-50 border border-brand-100 rounded-[8px] p-3 text-[12px]">
+                            <div className="font-[600] text-brand-800 mb-1">Umbrales calculados</div>
+                            <div className="text-brand-700">• Mensual: {formatCurrency(umbralM)}</div>
+                            <div className="text-brand-700">• Trimestral: {formatCurrency(umbralM * 3)}</div>
+                        </div>
+                    )}
+                </div>
+            </Modal>
+        </div>
     );
 };

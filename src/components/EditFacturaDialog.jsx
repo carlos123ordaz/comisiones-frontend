@@ -1,550 +1,224 @@
 import { useState, useEffect } from 'react';
-import {
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    Button,
-    TextField,
-    Box,
-    Typography,
-    IconButton,
-    Divider,
-    Alert,
-    Grid,
-    Paper,
-    Select,
-    MenuItem,
-    FormControl,
-    InputLabel,
-    InputAdornment,
-    Tooltip,
-    Stack
-} from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import {
-    Close as CloseIcon,
-    Save as SaveIcon,
-    Add as AddIcon,
-    Delete as DeleteIcon,
-    Info as InfoIcon
-} from '@mui/icons-material';
 import axios from 'axios';
+import { Plus, Trash2, Save } from 'lucide-react';
+import { Modal, Button, IconButton, Alert, Select, Spinner } from './ui';
 import { URI_API } from '../config/api';
-import { colorTokens } from '../theme';
 
 const API_URL = URI_API;
+const fmtCurrency = v => new Intl.NumberFormat('es-PE',{style:'currency',currency:'USD',minimumFractionDigits:2}).format(v||0);
 
 export const EditFacturaDialog = ({ open, onClose, facturaId, onSave }) => {
-    const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState(null);
-    const [factura, setFactura] = useState(null);
-    const [listaResponsables, setListaResponsables] = useState([]);
-    const [montoTotal, setMontoTotal] = useState(0);
-    const [montoActualizado, setMontoActualizado] = useState(0);
-    const [utilidad, setUtilidad] = useState(0);
+    const [loading, setLoading]           = useState(false);
+    const [saving, setSaving]             = useState(false);
+    const [error, setError]               = useState(null);
+    const [factura, setFactura]           = useState(null);
+    const [listaResponsables, setListaR]  = useState([]);
+    const [montoTotal, setMontoTotal]     = useState(0);
+    const [montoActualizado, setMontoAct] = useState(0);
+    const [utilidad, setUtilidad]         = useState(0);
+    const [responsables, setResponsables] = useState([{ nombre:'', porcentaje:100, comision:0 }]);
 
-    // Array de responsables
-    const [responsables, setResponsables] = useState([
-        { nombre: '', porcentaje: 100, comision: 0 }
-    ]);
+    useEffect(() => { if (open && facturaId) { cargarFactura(); cargarResponsables(); } }, [open, facturaId]);
 
     useEffect(() => {
-        if (open && facturaId) {
-            cargarFactura();
-            cargarResponsables();
-        }
-    }, [open, facturaId]);
-
-    useEffect(() => {
-        if (utilidad < 0.22) {
-            setMontoActualizado(montoTotal * utilidad / 0.22);
-        } else {
-            setMontoActualizado(montoTotal);
-        }
+        setMontoAct(utilidad < 0.22 ? montoTotal * utilidad / 0.22 : montoTotal);
     }, [montoTotal, utilidad]);
 
-    // Recalcular comisiones cuando cambia el monto o los porcentajes
     useEffect(() => {
-        const comisionBase = montoActualizado * 0.01;
-        const nuevosResponsables = responsables.map(r => ({
-            ...r,
-            comision: comisionBase * (r.porcentaje / 100)
-        }));
-        setResponsables(nuevosResponsables);
+        const base = montoActualizado * 0.01;
+        setResponsables(rs => rs.map(r => ({ ...r, comision: base * (r.porcentaje / 100) })));
     }, [montoActualizado]);
 
     const cargarResponsables = async () => {
-        try {
-            const response = await axios.get(`${API_URL}/usuarios`);
-            setListaResponsables(response.data || []);
-        } catch (error) {
-            console.error('Error cargando responsables:', error);
-        }
+        try { const r = await axios.get(`${API_URL}/usuarios`); setListaR(r.data||[]); } catch(e){console.error(e);}
     };
 
     const cargarFactura = async () => {
         try {
-            setLoading(true);
-            setError(null);
-
-            const response = await axios.get(`${API_URL}/invoice/${facturaId}`);
-            const data = response.data;
-
-            setFactura(data);
-            setUtilidad(data.utilidad_bruta);
-            setMontoTotal(data.monto_total);
-
-            // Cargar responsables desde el nuevo formato
-            if (data.responsables && data.responsables.length > 0) {
-                setResponsables(
-                    data.responsables.map(r => ({
-                        nombre: r.nombre,
-                        porcentaje: r.porcentaje * 100, // Convertir a porcentaje
-                        comision: r.comision || 0
-                    }))
-                );
+            setLoading(true); setError(null);
+            const r = await axios.get(`${API_URL}/invoice/${facturaId}`);
+            const d = r.data;
+            setFactura(d); setUtilidad(d.utilidad_bruta); setMontoTotal(d.monto_total);
+            if (d.responsables?.length > 0) {
+                setResponsables(d.responsables.map(r => ({ nombre: r.nombre, porcentaje: r.porcentaje*100, comision: r.comision||0 })));
             } else {
-                // Fallback al formato antiguo si existe
-                const responsablesLegacy = [];
-                if (data.responsable_1) {
-                    responsablesLegacy.push({
-                        nombre: data.responsable_1,
-                        porcentaje: (data.porcentaje_1 || 0.7) * 100,
-                        comision: data.comision_1 || 0
-                    });
-                }
-                if (data.responsable_2) {
-                    responsablesLegacy.push({
-                        nombre: data.responsable_2,
-                        porcentaje: (data.porcentaje_2 || 0.3) * 100,
-                        comision: data.comision_2 || 0
-                    });
-                }
-                setResponsables(responsablesLegacy.length > 0 ? responsablesLegacy : [
-                    { nombre: '', porcentaje: 100, comision: 0 }
-                ]);
+                const legacy = [];
+                if (d.responsable_1) legacy.push({ nombre: d.responsable_1, porcentaje: (d.porcentaje_1||0.7)*100, comision: d.comision_1||0 });
+                if (d.responsable_2) legacy.push({ nombre: d.responsable_2, porcentaje: (d.porcentaje_2||0.3)*100, comision: d.comision_2||0 });
+                setResponsables(legacy.length > 0 ? legacy : [{ nombre:'', porcentaje:100, comision:0 }]);
             }
-        } catch (error) {
-            console.error('Error cargando factura:', error);
-            setError(error.response?.data?.detail || 'Error al cargar la factura');
-        } finally {
-            setLoading(false);
-        }
+        } catch(e) { setError(e.response?.data?.detail||'Error al cargar'); }
+        finally { setLoading(false); }
     };
 
-    const agregarResponsable = () => {
-        setResponsables([
-            ...responsables,
-            { nombre: '', porcentaje: 50, comision: 0 }
-        ]);
+    const addResp    = () => setResponsables(rs => [...rs, { nombre:'', porcentaje:50, comision:0 }]);
+    const removeResp = i  => responsables.length > 1 && setResponsables(rs => rs.filter((_,x) => x!==i));
+    const updateResp = (i, field, val) => {
+        setResponsables(rs => {
+            const next = [...rs]; next[i] = { ...next[i], [field]: val };
+            if (field === 'porcentaje') next[i].comision = montoActualizado * 0.01 * (val/100);
+            return next;
+        });
     };
 
-    const eliminarResponsable = (index) => {
-        if (responsables.length > 1) {
-            const nuevosResponsables = responsables.filter((_, i) => i !== index);
-            setResponsables(nuevosResponsables);
+    const pctTotal   = responsables.reduce((s, r) => s + (parseFloat(r.porcentaje)||0), 0);
+    const comTotal   = responsables.reduce((s, r) => s + (r.comision||0), 0);
+    const comBase    = montoActualizado * 0.01;
+    const pctReal    = comBase > 0 ? (comTotal/comBase)*100 : 0;
+
+    const validate = () => {
+        if (montoTotal < 0 || montoActualizado < 0) return 'Los montos no pueden ser negativos';
+        if (!responsables.length) return 'Debe haber al menos un responsable';
+        for (let i=0; i<responsables.length; i++) {
+            const r = responsables[i];
+            if (!r.nombre?.trim()) return `Responsable ${i+1} sin nombre`;
+            if (r.porcentaje < 0)  return `Porcentaje ${i+1} negativo`;
+            if (r.porcentaje > 200) return `Porcentaje ${i+1} supera 200%`;
         }
-    };
-
-    const actualizarResponsable = (index, campo, valor) => {
-        const nuevosResponsables = [...responsables];
-        nuevosResponsables[index] = {
-            ...nuevosResponsables[index],
-            [campo]: valor
-        };
-
-        // Recalcular comisión
-        if (campo === 'porcentaje') {
-            const comisionBase = montoActualizado * 0.01;
-            nuevosResponsables[index].comision = comisionBase * (valor / 100);
-        }
-
-        setResponsables(nuevosResponsables);
-    };
-
-    const calcularPorcentajeTotal = () => {
-        return responsables.reduce((sum, r) => sum + (parseFloat(r.porcentaje) || 0), 0);
-    };
-
-    const calcularComisionTotal = () => {
-        return responsables.reduce((sum, r) => sum + (r.comision || 0), 0);
-    };
-
-    const validarFormulario = () => {
-        if (montoTotal < 0 || montoActualizado < 0) {
-            return { valido: false, mensaje: 'Los montos no pueden ser negativos' };
-        }
-
-        if (responsables.length === 0) {
-            return { valido: false, mensaje: 'Debe haber al menos un responsable' };
-        }
-
-        for (let i = 0; i < responsables.length; i++) {
-            const resp = responsables[i];
-
-            if (!resp.nombre || resp.nombre.trim() === '') {
-                return { valido: false, mensaje: `El responsable ${i + 1} debe tener un nombre` };
-            }
-
-            if (resp.porcentaje < 0) {
-                return { valido: false, mensaje: `El porcentaje del responsable ${i + 1} no puede ser negativo` };
-            }
-
-            if (resp.porcentaje > 200) {
-                return { valido: false, mensaje: `El porcentaje del responsable ${i + 1} no puede superar 200%` };
-            }
-        }
-
-        // Verificar nombres duplicados
         const nombres = responsables.map(r => r.nombre);
-        const nombresDuplicados = nombres.filter((nombre, index) => nombres.indexOf(nombre) !== index);
-        if (nombresDuplicados.length > 0) {
-            return { valido: false, mensaje: 'No puede haber responsables duplicados' };
-        }
-
-        return { valido: true };
+        if (new Set(nombres).size !== nombres.length) return 'Hay responsables duplicados';
+        return null;
     };
 
     const handleGuardar = async () => {
-        const validacion = validarFormulario();
-        if (!validacion.valido) {
-            setError(validacion.mensaje);
-            return;
-        }
-
+        const err = validate();
+        if (err) { setError(err); return; }
         try {
-            setSaving(true);
-            setError(null);
-
-            const payload = {
+            setSaving(true); setError(null);
+            await axios.put(`${API_URL}/invoice/${facturaId}`, {
                 monto_total: montoTotal,
-                responsables: responsables.map(r => ({
-                    nombre: r.nombre,
-                    porcentaje: r.porcentaje / 100, // Convertir a decimal
-                    comision: r.comision
-                }))
-            };
-
-            await axios.put(`${API_URL}/invoice/${facturaId}`, payload);
-
-            if (onSave) {
-                onSave();
-            }
+                responsables: responsables.map(r => ({ nombre: r.nombre, porcentaje: r.porcentaje/100, comision: r.comision })),
+            });
+            onSave && onSave();
             onClose();
-        } catch (error) {
-            console.error('Error guardando cambios:', error);
-            setError(error.response?.data?.detail || 'Error al guardar los cambios');
-        } finally {
-            setSaving(false);
-        }
+        } catch(e) { setError(e.response?.data?.detail||'Error al guardar'); }
+        finally { setSaving(false); }
     };
-
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat('es-PE', {
-            style: 'currency',
-            currency: 'USD',
-            minimumFractionDigits: 2
-        }).format(value || 0);
-    };
-
-    const porcentajeTotal = calcularPorcentajeTotal();
-    const comisionTotal = calcularComisionTotal();
-    const comisionBase = montoActualizado * 0.01;
-    const porcentajeTotalReal = comisionBase > 0 ? (comisionTotal / comisionBase) * 100 : 0;
 
     if (!factura && !loading) return null;
 
     return (
-        <Dialog
+        <Modal
             open={open}
             onClose={onClose}
-            maxWidth="md"
-            fullWidth
-            PaperProps={{
-                sx: { borderRadius: 3 }
-            }}
+            title="Editar Factura"
+            width={560}
+            footer={
+                <>
+                    <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+                    <Button variant="primary" icon={Save} onClick={handleGuardar} disabled={saving||loading}>
+                        {saving ? 'Guardando...' : 'Guardar Cambios'}
+                    </Button>
+                </>
+            }
         >
-            <DialogTitle sx={{ pb: 1 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6" fontWeight={700}>
-                        Editar Factura
-                    </Typography>
-                    <IconButton onClick={onClose} size="small">
-                        <CloseIcon />
-                    </IconButton>
-                </Box>
-            </DialogTitle>
+            {loading ? (
+                <div className="flex justify-center py-8"><Spinner size={28}/></div>
+            ) : factura ? (
+                <div className="flex flex-col gap-4">
+                    {error && <Alert severity="error" onClose={()=>setError(null)}>{error}</Alert>}
 
-            <Divider />
+                    {/* Info factura */}
+                    <div className="bg-n-50 border border-n-150 rounded-[8px] p-3 grid grid-cols-2 gap-2 text-[12px]">
+                        {[['Empresa', factura.nombre_empresa], ['Producto', factura.producto], ['Fecha', factura.fecha], ['Mes', factura.mes]].map(([k,v]) => (
+                            <div key={k}><div className="text-n-500 mb-0.5">{k}</div><div className="font-[600] text-n-900">{v||'N/A'}</div></div>
+                        ))}
+                    </div>
 
-            <DialogContent sx={{ pt: 3 }}>
-                {loading ? (
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                        <Typography>Cargando...</Typography>
-                    </Box>
-                ) : error ? (
-                    <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-                        {error}
+                    {/* Monto */}
+                    <div>
+                        <label className="block text-[11.5px] font-[600] text-n-600 mb-1">Monto Total</label>
+                        <div className="ring-focus flex items-center bg-n-0 border border-n-200 rounded-[6px] h-[32px] px-[10px] transition-all w-1/2">
+                            <span className="text-n-500 text-[12.5px] mr-1.5">$</span>
+                            <input type="number" value={montoTotal} onChange={e=>setMontoTotal(parseFloat(e.target.value)||0)}
+                                className="flex-1 bg-transparent border-none outline-none text-[13px] text-n-900" />
+                        </div>
+                    </div>
+
+                    {/* Comisión base */}
+                    <div className="bg-brand-50 border border-brand-100 rounded-[8px] p-3">
+                        <div className="text-[11.5px] font-[600] text-brand-700 mb-0.5">Comisión base (1% del monto actualizado)</div>
+                        <div className="mono tnum text-[18px] font-[700] text-brand-800">{fmtCurrency(comBase)}</div>
+                    </div>
+
+                    {/* Info aviso */}
+                    <Alert severity="info">
+                        Los porcentajes son <strong>independientes</strong> y se calculan sobre el 1% base. Pueden sumar más de 100%.
                     </Alert>
-                ) : factura ? (
-                    <>
-                        {/* Información básica de la factura */}
-                        <Paper sx={{ p: 2, mb: 3, bgcolor: 'background.default', border: '1px solid', borderColor: 'divider' }}>
-                            <Grid container spacing={2}>
-                                <Grid item xs={12} sm={6}>
-                                    <Typography variant="caption" color="text.secondary">
-                                        Empresa
-                                    </Typography>
-                                    <Typography variant="body2" fontWeight={600}>
-                                        {factura.nombre_empresa || 'N/A'}
-                                    </Typography>
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <Typography variant="caption" color="text.secondary">
-                                        Producto
-                                    </Typography>
-                                    <Typography variant="body2" fontWeight={600}>
-                                        {factura.producto || 'N/A'}
-                                    </Typography>
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <Typography variant="caption" color="text.secondary">
-                                        Fecha
-                                    </Typography>
-                                    <Typography variant="body2" fontWeight={600}>
-                                        {factura.fecha || 'N/A'}
-                                    </Typography>
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <Typography variant="caption" color="text.secondary">
-                                        Mes
-                                    </Typography>
-                                    <Typography variant="body2" fontWeight={600}>
-                                        {factura.mes || 'N/A'}
-                                    </Typography>
-                                </Grid>
-                            </Grid>
-                        </Paper>
 
-                        {/* Sección de Montos */}
-                        <Box sx={{ mb: 4 }}>
-                            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
-                                💰 Montos
-                            </Typography>
-                            <Grid container spacing={2}>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        label="Monto Total"
-                                        fullWidth
-                                        type="number"
-                                        value={montoTotal}
-                                        onChange={(e) => setMontoTotal(parseFloat(e.target.value) || 0)}
-                                        InputProps={{
-                                            startAdornment: (
-                                                <InputAdornment position="start">
-                                                    <Typography color="text.secondary">$</Typography>
-                                                </InputAdornment>
-                                            )
-                                        }}
-                                    />
-                                </Grid>
-                            </Grid>
-                        </Box>
+                    {/* Responsables */}
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="text-[13px] font-[700] text-n-900">Responsables y Comisiones</div>
+                            <Button variant="ghost" size="sm" icon={Plus} onClick={addResp}>Agregar</Button>
+                        </div>
 
-                        {/* Comisión base */}
-                        <Box sx={{ mb: 3, p: 2, bgcolor: alpha(colorTokens.info, 0.08), borderRadius: 2, border: `1px solid ${alpha(colorTokens.info, 0.18)}` }}>
-                            <Typography variant="caption" sx={{ color: colorTokens.info }} fontWeight={600}>
-                                💡 Comisión base (1% del monto actualizado)
-                            </Typography>
-                            <Typography variant="h6" fontWeight={700} sx={{ color: colorTokens.brand }}>
-                                {formatCurrency(comisionBase)}
-                            </Typography>
-                        </Box>
-
-                        {/* Info sobre porcentajes independientes */}
-                        <Alert
-                            severity="info"
-                            icon={<InfoIcon />}
-                            sx={{ mb: 3, borderRadius: 2 }}
-                        >
-                            Los porcentajes son <strong>independientes</strong> y se calculan sobre el 1% base.
-                            Pueden sumar más de 100% (ej: Responsable 1: 70% + Responsable 2: 50% = 120% del 1% base).
-                        </Alert>
-
-                        {/* Sección de Responsables */}
-                        <Box sx={{ mb: 3 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                <Typography variant="subtitle1" fontWeight={700}>
-                                    👥 Responsables y Comisiones
-                                </Typography>
-                                <Button
-                                    size="small"
-                                    startIcon={<AddIcon />}
-                                    onClick={agregarResponsable}
-                                    sx={{ textTransform: 'none' }}
-                                >
-                                    Agregar Responsable
-                                </Button>
-                            </Box>
-
-                            {responsables.map((responsable, index) => (
-                                <Paper
-                                    key={index}
-                                    sx={{
-                                        p: 2,
-                                        mb: 2,
-                                        border: '1px solid',
-                                        borderColor: 'divider',
-                                        position: 'relative'
-                                    }}
-                                >
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                        <Typography variant="subtitle2" fontWeight={600} color={index === 0 ? "primary.main" : "secondary.main"}>
-                                            {index === 0 ? 'Responsable Principal' : `Responsable ${index + 1}`}
-                                        </Typography>
-                                        {responsables.length > 1 && (
-                                            <Tooltip title="Eliminar responsable">
-                                                <IconButton
-                                                    size="small"
-                                                    color="error"
-                                                    onClick={() => eliminarResponsable(index)}
-                                                >
-                                                    <DeleteIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                        )}
-                                    </Box>
-
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={12} sm={7}>
-                                            <FormControl fullWidth>
-                                                <InputLabel>Nombre</InputLabel>
-                                                <Select
-                                                    value={responsable.nombre}
-                                                    onChange={(e) => actualizarResponsable(index, 'nombre', e.target.value)}
-                                                    label="Nombre"
-                                                >
-                                                    <MenuItem value="">
-                                                        <em>Seleccionar...</em>
-                                                    </MenuItem>
-                                                    {listaResponsables.map((resp) => (
-                                                        <MenuItem
-                                                            key={resp.nombre}
-                                                            value={resp.nombre}
-                                                            disabled={responsables.some((r, i) => i !== index && r.nombre === resp.nombre)}
-                                                        >
-                                                            {resp.nombre}
-                                                        </MenuItem>
-                                                    ))}
-                                                </Select>
-                                            </FormControl>
-                                        </Grid>
-                                        <Grid item xs={12} sm={5}>
-                                            <TextField
-                                                label="Porcentaje del 1% base"
-                                                fullWidth
-                                                type="number"
-                                                value={responsable.porcentaje}
-                                                onChange={(e) => actualizarResponsable(index, 'porcentaje', parseFloat(e.target.value) || 0)}
-                                                InputProps={{
-                                                    endAdornment: (
-                                                        <InputAdornment position="end">
-                                                            <Typography>%</Typography>
-                                                        </InputAdornment>
-                                                    )
-                                                }}
-                                                inputProps={{
-                                                    min: 0,
-                                                    max: 200,
-                                                    step: 0.1
-                                                }}
-                                                helperText="Puede superar 100%"
+                        <div className="flex flex-col gap-2">
+                            {responsables.map((r, i) => (
+                                <div key={i} className="border border-n-150 rounded-[8px] p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className={`text-[12px] font-[600] ${i===0?'text-brand-700':'text-teal-600'}`}>
+                                            {i===0 ? 'Responsable Principal' : `Responsable ${i+1}`}
+                                        </span>
+                                        {responsables.length > 1 && <IconButton icon={Trash2} size={24} danger onClick={()=>removeResp(i)} title="Eliminar" />}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-[11px] text-n-500 mb-1">Nombre</label>
+                                            <Select
+                                                value={r.nombre}
+                                                onChange={v=>updateResp(i,'nombre',v)}
+                                                placeholder="Seleccionar..."
+                                                options={listaResponsables.map(lr => ({
+                                                    value: lr.nombre,
+                                                    label: lr.nombre,
+                                                    disabled: responsables.some((rr,x) => x!==i && rr.nombre===lr.nombre)
+                                                }))}
                                             />
-                                        </Grid>
-                                        <Grid item xs={12}>
-                                            <Box sx={{ p: 1.5, bgcolor: alpha(colorTokens.accentTeal, 0.10), borderRadius: 1 }}>
-                                                <Typography variant="caption" sx={{ color: colorTokens.accentTeal }}>
-                                                    Comisión calculada ({responsable.porcentaje}% de {formatCurrency(comisionBase)})
-                                                </Typography>
-                                                <Typography variant="h6" fontWeight={700} sx={{ color: colorTokens.brand }}>
-                                                    {formatCurrency(responsable.comision)}
-                                                </Typography>
-                                            </Box>
-                                        </Grid>
-                                    </Grid>
-                                </Paper>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] text-n-500 mb-1">% del 1% base</label>
+                                            <div className="ring-focus flex items-center bg-n-0 border border-n-200 rounded-[6px] h-[32px] px-[10px] transition-all">
+                                                <input type="number" min={0} max={200} step={0.1} value={r.porcentaje}
+                                                    onChange={e=>updateResp(i,'porcentaje',parseFloat(e.target.value)||0)}
+                                                    className="flex-1 bg-transparent border-none outline-none text-[13px] text-n-900" />
+                                                <span className="text-n-500 ml-1">%</span>
+                                            </div>
+                                            <div className="text-[10.5px] text-n-400 mt-0.5">Puede superar 100%</div>
+                                        </div>
+                                        <div className="col-span-2 bg-teal-50 border border-teal-100 rounded-[6px] p-2">
+                                            <div className="text-[11px] text-teal-600">Comisión calculada ({r.porcentaje}% de {fmtCurrency(comBase)})</div>
+                                            <div className="mono tnum text-[15px] font-[700] text-teal-700">{fmtCurrency(r.comision)}</div>
+                                        </div>
+                                    </div>
+                                </div>
                             ))}
-                        </Box>
+                        </div>
+                    </div>
 
-                        {/* Resumen de porcentajes */}
-                        <Alert
-                            severity={porcentajeTotal <= 100 ? 'info' : 'warning'}
-                            sx={{ borderRadius: 2, mb: 3 }}
-                        >
-                            <Stack spacing={0.5}>
-                                <Box>
-                                    <strong>Suma de porcentajes:</strong> {porcentajeTotal.toFixed(1)}%
-                                </Box>
-                                <Box>
-                                    <strong>Porcentaje real del monto:</strong> {porcentajeTotalReal.toFixed(2)}%
-                                    {porcentajeTotalReal > 1 && ' (Supera el 1% base) ⚠️'}
-                                </Box>
-                            </Stack>
-                        </Alert>
+                    {/* Summary */}
+                    <Alert severity={pctTotal<=100?'info':'warning'}>
+                        <div><strong>Suma de porcentajes:</strong> {pctTotal.toFixed(1)}%</div>
+                        <div><strong>Porcentaje real del monto:</strong> {pctReal.toFixed(2)}%{pctReal>1&&' (Supera el 1% base) ⚠️'}</div>
+                    </Alert>
 
-                        {/* Resumen total */}
-                        <Box sx={{ p: 2, bgcolor: alpha(colorTokens.action, 0.08), borderRadius: 2, border: `1px solid ${alpha(colorTokens.action, 0.18)}` }}>
-                            <Grid container spacing={2}>
-                                <Grid item xs={6}>
-                                    <Typography variant="caption" color="text.secondary">
-                                        Comisión base (1%)
-                                    </Typography>
-                                    <Typography variant="h6" fontWeight={600} color="text.secondary">
-                                        {formatCurrency(comisionBase)}
-                                    </Typography>
-                                </Grid>
-                                <Grid item xs={6}>
-                                    <Typography variant="caption" color="primary.main" fontWeight={700}>
-                                        Comisión Total a Pagar
-                                    </Typography>
-                                    <Typography variant="h5" fontWeight={700} color="primary.dark">
-                                        {formatCurrency(comisionTotal)}
-                                    </Typography>
-                                </Grid>
-                            </Grid>
-
-                            {comisionTotal > comisionBase && (
-                                <Alert severity="warning" sx={{ mt: 2 }}>
-                                    La comisión total ({formatCurrency(comisionTotal)}) supera el 1% base ({formatCurrency(comisionBase)})
-                                    en {formatCurrency(comisionTotal - comisionBase)} ({((comisionTotal / comisionBase - 1) * 100).toFixed(1)}% más)
-                                </Alert>
-                            )}
-                        </Box>
-                    </>
-                ) : null}
-            </DialogContent>
-
-            <Divider />
-
-            <DialogActions sx={{ p: 3 }}>
-                <Button onClick={onClose} sx={{ textTransform: 'none' }}>
-                    Cancelar
-                </Button>
-                <Button
-                    variant="contained"
-                    onClick={handleGuardar}
-                    disabled={saving || loading}
-                    startIcon={<SaveIcon />}
-                    sx={{
-                        textTransform: 'none',
-                        fontWeight: 600
-                    }}
-                >
-                    {saving ? 'Guardando...' : 'Guardar Cambios'}
-                </Button>
-            </DialogActions>
-        </Dialog>
+                    <div className="bg-brand-50 border border-brand-100 rounded-[8px] p-3 grid grid-cols-2 gap-2">
+                        <div>
+                            <div className="text-[11px] text-n-500 mb-0.5">Comisión base (1%)</div>
+                            <div className="mono tnum text-[15px] font-[600] text-n-600">{fmtCurrency(comBase)}</div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] font-[700] text-brand-700 mb-0.5">Comisión Total a Pagar</div>
+                            <div className="mono tnum text-[18px] font-[700] text-brand-800">{fmtCurrency(comTotal)}</div>
+                        </div>
+                        {comTotal > comBase && (
+                            <div className="col-span-2">
+                                <Alert severity="warning">La comisión total ({fmtCurrency(comTotal)}) supera el 1% base ({fmtCurrency(comBase)})</Alert>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : null}
+        </Modal>
     );
 };
