@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import axios from 'axios';
 import { invoke } from '@tauri-apps/api/core';
 import { UploadCloud, File, X, CheckCircle } from 'lucide-react';
@@ -10,6 +10,7 @@ export const UpdateData = () => {
     const [loading, setLoading]     = useState(false);
     const [message, setMessage]     = useState({ type:'', text:'' });
     const [isDragging, setDragging] = useState(false);
+    const fileInputRef = useRef(null);
 
     const handleFileChange = (f) => {
         if (!f) return;
@@ -65,12 +66,10 @@ export const UpdateData = () => {
                         <div className="text-[14px] font-[600] text-n-900 mb-1">Arrastra y suelta el archivo aquí</div>
                         <div className="text-[12.5px] text-n-500 mb-1">Tamaño máximo: 25 MB · Formato: CSV</div>
                         <div className="text-[12px] text-n-400 mb-4">Si no subes archivo, se usará la información de la BD local.</div>
-                        <label>
-                            <Button variant="secondary" disabled={loading} className="cursor-pointer">
-                                Buscar Archivo
-                            </Button>
-                            <input type="file" className="hidden" accept=".csv" onChange={e=>handleFileChange(e.target.files[0])} />
-                        </label>
+                        <Button variant="secondary" disabled={loading} onClick={() => fileInputRef.current?.click()}>
+                            Buscar Archivo
+                        </Button>
+                        <input ref={fileInputRef} type="file" className="hidden" accept=".csv" onChange={e=>handleFileChange(e.target.files[0])} />
                     </div>
                 ) : (
                     /* File preview */
