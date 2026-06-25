@@ -67,7 +67,7 @@ async fn fetch_ventas_from_db() -> Result<Vec<VentaRecord>, String> {
             ISNULL(v.Cliente, '') as Cliente
         FROM venta v 
         JOIN Cliente2 c ON v.Cd_Clt = c.Cd_Clt 
-        WHERE v.FecMov >= '2025-01-01' 
+        WHERE v.FecMov >= '2026-01-01' 
           AND v.ValorNeto IS NOT NULL 
           AND v.IB_Anulado = 0 
           AND c.Cd_TDI != '01'

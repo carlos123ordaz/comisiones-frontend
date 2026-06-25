@@ -23,8 +23,8 @@ const UserDashboard = () => {
     const { user, logout }              = useAuth();
     const navigate                      = useNavigate();
     const [userSelected, setUserSelected]         = useState('');
-    const [trimestreSelected, setTrimestreSelected] = useState('3');
-    const [selectedYear, setSelectedYear]         = useState(2025);
+    const [trimestreSelected, setTrimestreSelected] = useState('1');
+    const [selectedYear, setSelectedYear]         = useState(2026);
     const [usuarios, setUsuarios]                 = useState([]);
     const [resume, setResume]                     = useState(null);
     const [tipoVista, setTipoVista]               = useState('umbral');

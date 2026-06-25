@@ -1,17 +1,18 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import axios from 'axios';
 import moment from 'moment';
 import { URI_API } from '../config/api';
-import { Button, IconButton, Spinner, DownloadSuccessDialog } from './ui';
+import { Button, IconButton, Spinner, DownloadSuccessDialog, Alert } from './ui';
 import { useTheme } from '../contexts/ThemeContext';
 import {
     Settings, LayoutDashboard, Users, LogOut,
-    Download, ChevronLeft, ChevronRight, Layers, Menu, X, Moon, Sun
+    Download, ChevronLeft, ChevronRight, Layers, Menu, X, Moon, Sun, RefreshCw
 } from 'lucide-react';
 
 const NAV = [
@@ -31,6 +32,8 @@ export const AdminPage = () => {
     const { isDark, toggleTheme } = useTheme();
     const [downloading, setDownloading] = useState(false);
     const [downloadDialog, setDownloadDialog] = useState({ open: false, filename: '', savedPath: '' });
+    const [syncing, setSyncing]     = useState(false);
+    const [syncMsg, setSyncMsg]     = useState({ type: '', text: '' });
 
     // Responsive sidebar: overlay on mobile, auto-collapse at medium widths
     useEffect(() => {
@@ -55,6 +58,32 @@ export const AdminPage = () => {
     );
 
     const handleLogout = () => { logout(); navigate('/login'); };
+
+    const handleSyncBitrix = async () => {
+        setSyncing(true);
+        setSyncMsg({ type: 'info', text: 'Consultando base de datos local...' });
+        try {
+            let dbData = null;
+            try {
+                dbData = await invoke('query_database');
+                setSyncMsg({ type: 'info', text: `Obteniendo invoices de Bitrix24...` });
+            } catch {
+                setSyncMsg({ type: 'info', text: 'Obteniendo invoices de Bitrix24...' });
+            }
+            const fd = new FormData();
+            if (dbData) fd.append('ventas_data', JSON.stringify(dbData));
+            const r = await axios.post(`${URI_API}/invoices/sync-bitrix`, fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 120000,
+            });
+            setSyncMsg({ type: 'success', text: r.data.message || 'Sincronización exitosa' });
+        } catch (e) {
+            setSyncMsg({ type: 'error', text: e.response?.data?.detail || e.message || 'Error al sincronizar' });
+        } finally {
+            setSyncing(false);
+            setTimeout(() => setSyncMsg({ type: '', text: '' }), 5000);
+        }
+    };
 
     const handleNavigate = (path) => {
         navigate(path);
@@ -270,8 +299,26 @@ export const AdminPage = () => {
                                 {user.nombre}
                             </span>
                         )}
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            icon={syncing ? () => <Spinner size={13} /> : RefreshCw}
+                            onClick={handleSyncBitrix}
+                            disabled={syncing}
+                            title="Obtener invoices desde Bitrix24 y actualizar datos"
+                        >
+                            {syncing ? 'Actualizando...' : 'Actualizar Datos'}
+                        </Button>
                     </div>
                 </header>
+
+                {syncMsg.text && (
+                    <div className="px-4 sm:px-5 pt-3">
+                        <Alert severity={syncMsg.type || 'info'} onClose={() => setSyncMsg({ type: '', text: '' })}>
+                            {syncMsg.text}
+                        </Alert>
+                    </div>
+                )}
 
                 <main className="flex-1 overflow-auto">
                     <div style={{ animation: 'fadeIn 0.2s ease' }}>

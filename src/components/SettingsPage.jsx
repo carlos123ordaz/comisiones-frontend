@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, Plus, Edit2, Trash2, RefreshCw, Users, FileText, Database } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, RefreshCw, Users, FileText } from 'lucide-react';
 import { Button, IconButton, Input, Select, Modal, Alert, Badge, Spinner, Tabs, EmptyState } from './ui';
 import { FacturasViewer } from './FacturasViewer';
-import { UpdateData } from './UpdateData';
 import { URI_API } from '../config/api';
 
 const API_URL = URI_API;
@@ -129,9 +128,8 @@ export const SettingsPage = () => {
         ? (formData.meta_mensual * formData.porcentaje_umbral / 100) : null;
 
     const TABS = [
-        { value: 'vendedores', label: 'Vendedores',    icon: Users },
-        { value: 'facturas',   label: 'Facturas',      icon: FileText },
-        { value: 'carga',      label: 'Carga de Datos', icon: Database },
+        { value: 'vendedores', label: 'Vendedores', icon: Users },
+        { value: 'facturas',   label: 'Facturas',   icon: FileText },
     ];
 
     return (
@@ -139,7 +137,7 @@ export const SettingsPage = () => {
             {/* Page header */}
             <div className="mb-5">
                 <h1 className="text-[17px] font-[700] text-n-900 tracking-[-0.014em]">Configuración</h1>
-                <p className="text-[12.5px] text-n-500 mt-0.5">Gestiona vendedores, facturas y carga de datos.</p>
+                <p className="text-[12.5px] text-n-500 mt-0.5">Gestiona vendedores y facturas.</p>
             </div>
 
             {/* Toast */}
@@ -225,10 +223,6 @@ export const SettingsPage = () => {
                     <div className="p-5"><FacturasViewer /></div>
                 )}
 
-                {/* ── Tab: Carga ───────────────────────────── */}
-                {tabValue === 'carga' && (
-                    <div className="p-5"><UpdateData /></div>
-                )}
             </div>
 
             {/* ── Modal: Add/Edit Vendedor ─────────────────── */}

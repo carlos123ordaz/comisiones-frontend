@@ -27,7 +27,7 @@ const GeneralDashboard = () => {
     const [selectedPerson, setSelectedPerson] = useState('Todas');
     const [selectedName, setSelectedName]     = useState('Todas');
     const [dateRange, setDateRange]           = useState(1);
-    const [selectedYear, setSelectedYear]     = useState(2025);
+    const [selectedYear, setSelectedYear]     = useState(2026);
     const hasInitialized = useRef(false);
 
     const loadInvoices = async ({ silent = false } = {}) => {
