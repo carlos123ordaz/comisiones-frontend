@@ -29,7 +29,8 @@ const UserDashboard = () => {
     const [resume, setResume]                     = useState(null);
     const [tipoVista, setTipoVista]               = useState('umbral');
     const [comisiones, setComisiones]             = useState(null);
-    const [loading, setLoading]                   = useState(false);
+    const [loading, setLoading]                   = useState(true);
+    const [refreshing, setRefreshing]             = useState(false);
     const [error, setError]                       = useState(null);
     const [downloading, setDownloading]           = useState(false);
     const [downloadDialog, setDownloadDialog]     = useState({ open:false, filename:'', savedPath:'' });
@@ -37,10 +38,10 @@ const UserDashboard = () => {
     const skipNextReactive = useRef(false);
     const availableYears   = [2025, 2026];
 
-    const fetchData = async (name, { silent = false } = {}) => {
+    const fetchData = async (name) => {
         if (!name) return;
         try {
-            if (!silent) setLoading(true);
+            setRefreshing(true);
             setError(null);
             const [rR, cR] = await Promise.all([
                 axios.get(`${URI_API}/resumen/${name}/${trimestreSelected}`,  { params: { anio: selectedYear } }),
@@ -51,7 +52,7 @@ const UserDashboard = () => {
             setComisiones(cR.data || null);
         } catch (e) {
             setError(e.response?.data?.detail || 'Error al cargar datos');
-        } finally { setLoading(false); }
+        } finally { setRefreshing(false); }
     };
 
     useEffect(() => {
@@ -84,6 +85,7 @@ const UserDashboard = () => {
                 setResume({ productos: rR.data.data_productos || [], endress: rR.data.data_endress || null, unidad_negocio: rR.data.unidad_negocio });
                 setComisiones(cR.data || null);
                 hasInitialized.current = true;
+                skipNextReactive.current = false;
             } catch (e) {
                 if (!cancelled) setError(e.response?.data?.detail || 'Error al cargar datos');
             } finally { if (!cancelled) setLoading(false); }
@@ -95,7 +97,7 @@ const UserDashboard = () => {
     useEffect(() => {
         if (!hasInitialized.current || !selectedYear) return;
         if (skipNextReactive.current) { skipNextReactive.current = false; return; }
-        fetchData(userSelected, { silent: false });
+        fetchData(userSelected);
     }, [userSelected, trimestreSelected, selectedYear]);
 
     const handleDownloadUserReport = async () => {
@@ -206,7 +208,6 @@ const UserDashboard = () => {
     };
 
     if (loading) return <div className="flex justify-center items-center h-60"><Spinner size={40} /></div>;
-    if (error)   return <div className="p-4 md:p-6"><Alert severity="error">{error}</Alert></div>;
 
     return (
         <>
@@ -217,18 +218,20 @@ const UserDashboard = () => {
                     <h1 className="text-[17px] font-[700] text-n-900">{user.esLider ? 'Dashboard de Equipo' : 'Mi Dashboard'}</h1>
                     <p className="text-[12.5px] text-n-500 mt-0.5">{user.esLider ? `Visualizando: ${userSelected}` : `Bienvenido, ${user.nombre}`}</p>
                 </div>
-                {!user.esLider && (
-                    <div className="flex flex-wrap gap-2 shrink-0">
-                        <Button variant="primary" icon={downloading ? () => <Loader2 size={14} className="animate-spin" /> : Download}
-                            onClick={handleDownloadUserReport} disabled={downloading || !userSelected}>
-                            {downloading ? 'Descargando...' : 'Exportar Reporte'}
-                        </Button>
-                        <Button variant="ghost" icon={LogOut} onClick={() => { logout(); navigate('/login'); }}>
-                            Cerrar Sesión
-                        </Button>
-                        <IconButton icon={isDark ? Sun : Moon} onClick={toggleTheme} title={isDark ? 'Modo claro' : 'Modo oscuro'} />
-                    </div>
-                )}
+                <div className="flex flex-wrap gap-2 shrink-0">
+                    <Button variant="primary" icon={downloading ? () => <Loader2 size={14} className="animate-spin" /> : Download}
+                        onClick={handleDownloadUserReport} disabled={downloading || !userSelected}>
+                        {downloading ? 'Descargando...' : 'Exportar Reporte'}
+                    </Button>
+                    {!user.esLider && (
+                        <>
+                            <Button variant="ghost" icon={LogOut} onClick={() => { logout(); navigate('/login'); }}>
+                                Cerrar Sesión
+                            </Button>
+                            <IconButton icon={isDark ? Sun : Moon} onClick={toggleTheme} title={isDark ? 'Modo claro' : 'Modo oscuro'} />
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Filters row */}
@@ -259,6 +262,16 @@ const UserDashboard = () => {
                     </div>
                 ))}
             </div>
+
+            {error && <Alert severity="error" className="mb-4">{error}</Alert>}
+
+            {/* Content wrapper with refresh overlay */}
+            <div className="relative">
+                {refreshing && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-n-0/60 rounded-[10px]" style={{ backdropFilter: 'blur(2px)' }}>
+                        <Spinner size={32} />
+                    </div>
+                )}
 
             {/* Main grid */}
             <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-5">
@@ -375,6 +388,7 @@ const UserDashboard = () => {
                     </div>
                 </div>
             )}
+            </div>{/* end content wrapper */}
         </div>
 
         {/* Download dialog */}

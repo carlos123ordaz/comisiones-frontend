@@ -22,6 +22,7 @@ const GeneralDashboard = () => {
     };
     const [invoices, setInvoices]             = useState([]);
     const [loading, setLoading]               = useState(true);
+    const [refreshing, setRefreshing]         = useState(false);
     const [error, setError]                   = useState(null);
     const [availableFilters, setAvailableFilters] = useState({ responsables: [], productos: [], trimestres: [1,2,3,4], anios: [] });
     const [selectedPerson, setSelectedPerson] = useState('Todas');
@@ -30,9 +31,9 @@ const GeneralDashboard = () => {
     const [selectedYear, setSelectedYear]     = useState(2026);
     const hasInitialized = useRef(false);
 
-    const loadInvoices = async ({ silent = false } = {}) => {
+    const loadInvoices = async () => {
         try {
-            if (!silent) setLoading(true);
+            setRefreshing(true);
             setError(null);
             const params = new URLSearchParams();
             if (selectedPerson !== 'Todas') params.append('responsable', selectedPerson);
@@ -44,7 +45,7 @@ const GeneralDashboard = () => {
         } catch {
             setError('Error al cargar facturas.');
             setInvoices([]);
-        } finally { setLoading(false); }
+        } finally { setRefreshing(false); }
     };
 
     useEffect(() => {
@@ -74,7 +75,7 @@ const GeneralDashboard = () => {
 
     useEffect(() => {
         if (!hasInitialized.current) return;
-        loadInvoices({ silent: false });
+        loadInvoices();
     }, [selectedPerson, selectedName, dateRange, selectedYear]);
 
     const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -147,25 +148,32 @@ const GeneralDashboard = () => {
                 </div>
             </div>
 
-            {invoices.length === 0 ? (
+            {invoices.length === 0 && !refreshing ? (
                 <Alert severity="warning">No se encontraron facturas con los filtros seleccionados.</Alert>
             ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
-                    {/* Summary column */}
-                    <div className="card p-4">
-                        <div className="text-[10.5px] text-n-500 uppercase tracking-[0.07em] font-[600] mb-2">Resumen</div>
-                        <div className="mono tnum text-[28px] font-[700] text-n-900 tracking-[-0.025em] leading-[1]">
-                            ${(totalGeneral / 1_000_000).toFixed(2)}M
+                <div className="relative grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
+                    {refreshing && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-n-0/60 rounded-[10px]" style={{ backdropFilter: 'blur(2px)' }}>
+                            <Spinner size={32} />
                         </div>
-                        <div className="text-[12px] text-n-500 mt-1 mb-4">Monto total acumulado</div>
+                    )}
+                    {/* Summary column */}
+                    <div className="card p-4 max-h-[600px] flex flex-col">
+                        <div className="shrink-0">
+                            <div className="text-[10.5px] text-n-500 uppercase tracking-[0.07em] font-[600] mb-2">Resumen</div>
+                            <div className="mono tnum text-[28px] font-[700] text-n-900 tracking-[-0.025em] leading-[1]">
+                                ${(totalGeneral / 1_000_000).toFixed(2)}M
+                            </div>
+                            <div className="text-[12px] text-n-500 mt-1 mb-4">Monto total acumulado</div>
+                        </div>
 
-                        <div className="flex flex-col gap-0">
+                        <div className="flex flex-col gap-0 overflow-y-auto min-h-0">
                             {summaryData.map((item, i) => (
-                                <div key={i} className={`flex items-center gap-3 py-3 ${i < summaryData.length - 1 ? 'border-b border-n-100' : ''}`}>
-                                    <div style={{ background: item.color }} className="w-2 h-8 rounded-[2px] shrink-0" />
+                                <div key={i} className={`flex items-center gap-3 py-2.5 shrink-0 ${i < summaryData.length - 1 ? 'border-b border-n-100' : ''}`}>
+                                    <div style={{ background: item.color }} className="w-2 h-7 rounded-[2px] shrink-0" />
                                     <div className="flex-1 min-w-0">
-                                        <div className="text-[12.5px] font-[600] text-n-900 truncate">{item.name}</div>
-                                        <div className="text-[11.5px] text-n-500 mono tnum">${item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</div>
+                                        <div className="text-[12px] font-[600] text-n-900 truncate">{item.name}</div>
+                                        <div className="text-[11px] text-n-500 mono tnum">${item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</div>
                                     </div>
                                 </div>
                             ))}

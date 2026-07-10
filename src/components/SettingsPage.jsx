@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, Plus, Edit2, Trash2, RefreshCw, Users, FileText } from 'lucide-react';
+import { ask, open } from '@tauri-apps/plugin-dialog';
+import { readFile } from '@tauri-apps/plugin-fs';
+import { Search, Plus, Edit2, Trash2, RefreshCw, Users, FileText, Upload } from 'lucide-react';
 import { Button, IconButton, Input, Select, Modal, Alert, Badge, Spinner, Tabs, EmptyState } from './ui';
 import { FacturasViewer } from './FacturasViewer';
 import { URI_API } from '../config/api';
@@ -47,6 +49,7 @@ export const SettingsPage = () => {
     const [formData, setFormData]         = useState({ nombre: '', meta_mensual: '', porcentaje_umbral: 80, unidad_negocio: 'UNAU' });
     const [toast, setToast]               = useState(null);
     const [recalculando, setRecalculando] = useState(false);
+    const [importando, setImportando]     = useState(false);
     const [tabValue, setTabValue]         = useState('vendedores');
     const [page, setPage]                 = useState(0);
     const [rowsPerPage, setRowsPerPage]   = useState(15);
@@ -104,7 +107,8 @@ export const SettingsPage = () => {
     };
 
     const handleDelete = async (id, nombre) => {
-        if (!window.confirm(`¿Eliminar a ${nombre}?`)) return;
+        const confirmed = await ask(`¿Eliminar a ${nombre}?`, { title: 'Confirmar eliminación', kind: 'warning' });
+        if (!confirmed) return;
         try {
             await axios.delete(`${API_URL}/vendedores/${id}`);
             showToast('Vendedor eliminado');
@@ -113,13 +117,38 @@ export const SettingsPage = () => {
     };
 
     const handleRecalcular = async () => {
-        if (!window.confirm('¿Recalcular todas las comisiones?')) return;
+        const confirmed = await ask('¿Recalcular todas las comisiones?', { title: 'Confirmar recálculo', kind: 'warning' });
+        if (!confirmed) return;
         try {
             setRecalculando(true);
             await axios.post(`${API_URL}/recalcular-comisiones`);
             showToast('Comisiones recalculadas');
         } catch { showToast('Error al recalcular', 'error'); }
         finally { setRecalculando(false); }
+    };
+
+    const handleImportar = async () => {
+        const filePath = await open({
+            title: 'Seleccionar archivo Excel de metas',
+            filters: [{ name: 'Excel', extensions: ['xlsx', 'xls'] }],
+            multiple: false,
+        });
+        if (!filePath) return;
+        try {
+            setImportando(true);
+            const fileBytes = await readFile(filePath);
+            const blob = new Blob([fileBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const formData = new FormData();
+            formData.append('file', blob, filePath.split(/[/\\]/).pop());
+            const r = await axios.post(`${API_URL}/vendedores/importar`, formData);
+            showToast(r.data.message);
+            if (r.data.errores?.length) {
+                console.warn('Errores de importación:', r.data.errores);
+            }
+            fetchVendedores();
+        } catch (err) {
+            showToast(err.response?.data?.detail || 'Error al importar', 'error');
+        } finally { setImportando(false); }
     };
 
     const filtered   = vendedores.filter(v => v.nombre.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -164,6 +193,9 @@ export const SettingsPage = () => {
                                 className="w-full sm:w-[260px]"
                             />
                             <div className="flex gap-2 flex-wrap">
+                                <Button variant="secondary" icon={importando ? () => <Spinner size={13} /> : Upload} onClick={handleImportar} disabled={importando}>
+                                    {importando ? 'Importando...' : 'Importar'}
+                                </Button>
                                 <Button variant="secondary" icon={recalculando ? () => <Spinner size={13} /> : RefreshCw} onClick={handleRecalcular} disabled={recalculando}>
                                     {recalculando ? 'Recalculando...' : 'Recalcular'}
                                 </Button>
