@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { invoke } from '@tauri-apps/api/core';
@@ -12,7 +12,7 @@ import { Button, IconButton, Spinner, DownloadSuccessDialog, Alert } from './ui'
 import { useTheme } from '../contexts/ThemeContext';
 import {
     Settings, LayoutDashboard, Users, LogOut,
-    Download, ChevronLeft, ChevronRight, Layers, Menu, X, Moon, Sun, RefreshCw
+    Download, ChevronLeft, ChevronRight, Layers, Menu, X, Moon, Sun, RefreshCw, ChevronDown
 } from 'lucide-react';
 
 const NAV = [
@@ -34,6 +34,19 @@ export const AdminPage = () => {
     const [downloadDialog, setDownloadDialog] = useState({ open: false, filename: '', savedPath: '' });
     const [syncing, setSyncing]     = useState(false);
     const [syncMsg, setSyncMsg]     = useState({ type: '', text: '' });
+    const [reportMenuOpen, setReportMenuOpen] = useState(false);
+    const reportMenuRef = useRef(null);
+
+    // Close report menu on click outside
+    useEffect(() => {
+        if (!reportMenuOpen) return;
+        const handler = (e) => {
+            if (reportMenuRef.current && !reportMenuRef.current.contains(e.target))
+                setReportMenuOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [reportMenuOpen]);
 
     // Responsive sidebar: overlay on mobile, auto-collapse at medium widths
     useEffect(() => {
@@ -90,15 +103,18 @@ export const AdminPage = () => {
         setMobileOpen(false); // close drawer after navigation on mobile
     };
 
-    const handleDownloadReport = async () => {
+    const handleDownloadReport = async (segmento = null) => {
+        setReportMenuOpen(false);
         setDownloading(true);
         try {
-            const response = await axios.get(`${URI_API}/invoices/export_report`, {
+            const params = segmento ? `?segmento=${segmento}` : '';
+            const response = await axios.get(`${URI_API}/invoices/export_report${params}`, {
                 responseType: 'blob',
                 headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', Expires: '0' },
             });
             const timestamp = moment().format('YYYYMMDD_HHmmss');
-            const fileName  = `reporte_invoices_${timestamp}.xlsx`;
+            const segLabel  = segmento ? `_${segmento}` : '';
+            const fileName  = `reporte_invoices${segLabel}_${timestamp}.xlsx`;
             const arrayBuffer = await response.data.arrayBuffer();
             const filePath = await save({ defaultPath: fileName, filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
             if (filePath) {
@@ -182,27 +198,49 @@ export const AdminPage = () => {
                     </div>
                 )}
 
-                {/* Download button */}
-                <div className={`px-2 pt-2 pb-1 ${isCollapsed ? 'flex justify-center' : ''}`}>
-                    {isCollapsed ? (
-                        <IconButton
-                            icon={downloading ? () => <Spinner size={16} /> : Download}
-                            onClick={handleDownloadReport}
-                            disabled={downloading}
-                            title="Descargar Reporte"
-                        />
-                    ) : (
-                        <Button
-                            variant="primary"
-                            size="sm"
-                            icon={downloading ? () => <Spinner size={13} className="text-white" /> : Download}
-                            onClick={handleDownloadReport}
-                            disabled={downloading}
-                            className="w-full justify-center"
-                        >
-                            {downloading ? 'Descargando...' : 'Descargar Reporte'}
-                        </Button>
-                    )}
+                {/* Download dropdown */}
+                <div className={`px-2 pt-2 pb-1 ${isCollapsed ? 'flex justify-center' : ''}`} ref={reportMenuRef}>
+                    <div className="relative">
+                        {isCollapsed ? (
+                            <IconButton
+                                icon={downloading ? () => <Spinner size={16} /> : Download}
+                                onClick={() => setReportMenuOpen(p => !p)}
+                                disabled={downloading}
+                                title="Descargar Reporte"
+                            />
+                        ) : (
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                icon={downloading ? () => <Spinner size={13} className="text-white" /> : Download}
+                                iconRight={ChevronDown}
+                                onClick={() => setReportMenuOpen(p => !p)}
+                                disabled={downloading}
+                                className="w-full justify-center"
+                            >
+                                {downloading ? 'Descargando...' : 'Descargar Reporte'}
+                            </Button>
+                        )}
+
+                        {reportMenuOpen && !downloading && (
+                            <div className={`absolute z-30 bg-n-0 border border-n-200 rounded-[8px] shadow-[var(--shadow-md)] py-1 min-w-[200px]
+                                ${isCollapsed ? 'left-full ml-2 top-0' : 'left-0 right-0 mt-1 top-full'}`}>
+                                {[
+                                    { label: 'Reporte Completo',     segmento: null },
+                                    { label: 'Logística y Compras',  segmento: 'logistica' },
+                                    { label: 'Facturación',          segmento: 'facturacion' },
+                                ].map(opt => (
+                                    <div
+                                        key={opt.label}
+                                        onClick={() => handleDownloadReport(opt.segmento)}
+                                        className="px-3 py-[7px] text-[12px] font-[500] text-n-700 hover:bg-brand-50 hover:text-brand-700 cursor-pointer transition-colors duration-100"
+                                    >
+                                        {opt.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Separator */}
