@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
 import { URI_API } from '../config/api';
@@ -8,18 +8,19 @@ import { useTheme } from '../contexts/ThemeContext';
 const API_URL = URI_API;
 
 const CHART_COLORS = ['#4f46e5','#14b8a6','#f59e0b','#ef4444','#3b82f6','#a855f7'];
+const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
 const GeneralDashboard = () => {
     const { isDark } = useTheme();
-    const gridColor    = isDark ? '#2e3248' : '#e1e4ea';
-    const axisColor    = isDark ? '#5a6070' : '#7a818f';
-    const tooltipStyle = {
+    const gridColor    = useMemo(() => isDark ? '#2e3248' : '#e1e4ea', [isDark]);
+    const axisColor    = useMemo(() => isDark ? '#5a6070' : '#7a818f', [isDark]);
+    const tooltipStyle = useMemo(() => ({
         backgroundColor: isDark ? '#15181f' : '#fff',
         border: `1px solid ${isDark ? '#2e3248' : '#e1e4ea'}`,
         borderRadius: 10,
         fontSize: 12,
         color: isDark ? '#dde2e9' : '#242832',
-    };
+    }), [isDark]);
     const [invoices, setInvoices]             = useState([]);
     const [loading, setLoading]               = useState(true);
     const [refreshing, setRefreshing]         = useState(false);
@@ -31,7 +32,7 @@ const GeneralDashboard = () => {
     const [selectedYear, setSelectedYear]     = useState(2026);
     const hasInitialized = useRef(false);
 
-    const loadInvoices = async () => {
+    const loadInvoices = useCallback(async () => {
         try {
             setRefreshing(true);
             setError(null);
@@ -46,7 +47,7 @@ const GeneralDashboard = () => {
             setError('Error al cargar facturas.');
             setInvoices([]);
         } finally { setRefreshing(false); }
-    };
+    }, [selectedPerson, selectedName, dateRange, selectedYear]);
 
     useEffect(() => {
         let cancelled = false;
@@ -78,46 +79,66 @@ const GeneralDashboard = () => {
         loadInvoices();
     }, [selectedPerson, selectedName, dateRange, selectedYear]);
 
-    const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const { monthlyData, detailedMonthlyData, vendedorMonthlyData, uniqueProducts, uniqueVendedores, summaryData, totalGeneral } = useMemo(() => {
+        const monthTotals = {};
+        const monthProduct = {};
+        const monthVendedor = {};
+        const productSet = new Set();
+        const vendedorSet = new Set();
+        const productTotals = {};
+        let total = 0;
 
-    const monthlyData = useMemo(() => {
-        const totals = {};
-        invoices.forEach(inv => {
+        for (const inv of invoices) {
             const m = inv.mes;
-            if (m >= 1 && m <= 12) totals[monthNames[m-1]] = (totals[monthNames[m-1]] || 0) + (inv.monto_total || 0);
-        });
-        return Object.entries(totals).map(([mes, total]) => ({ mes, total: total / 1_000_000 }))
-            .sort((a, b) => monthNames.indexOf(a.mes) - monthNames.indexOf(b.mes));
+            const monto = inv.monto_total || 0;
+            const prod = inv.producto;
+
+            if (m < 1 || m > 12) continue;
+            const mn = MONTH_NAMES[m - 1];
+
+            // Monthly totals
+            monthTotals[mn] = (monthTotals[mn] || 0) + monto;
+
+            // Monthly by product
+            if (prod) {
+                productSet.add(prod);
+                monthProduct[mn] ??= {};
+                monthProduct[mn][prod] = (monthProduct[mn][prod] || 0) + monto;
+                productTotals[prod] = (productTotals[prod] || 0) + monto;
+            }
+
+            // Monthly by vendedor
+            monthVendedor[mn] ??= {};
+            for (const r of inv.responsables || []) {
+                if (r.nombre) {
+                    vendedorSet.add(r.nombre);
+                    monthVendedor[mn][r.nombre] = (monthVendedor[mn][r.nombre] || 0) + monto;
+                }
+            }
+
+            total += monto;
+        }
+
+        const sortByMonth = (a, b) => MONTH_NAMES.indexOf(a.mes) - MONTH_NAMES.indexOf(b.mes);
+
+        return {
+            monthlyData: Object.entries(monthTotals)
+                .map(([mes, t]) => ({ mes, total: t / 1_000_000 }))
+                .sort(sortByMonth),
+            detailedMonthlyData: Object.entries(monthProduct)
+                .map(([mes, prods]) => ({ mes, ...Object.fromEntries(Object.entries(prods).map(([k, v]) => [k, v / 1_000_000])) }))
+                .sort(sortByMonth),
+            vendedorMonthlyData: Object.entries(monthVendedor)
+                .map(([mes, vends]) => ({ mes, ...Object.fromEntries(Object.entries(vends).map(([k, v]) => [k, v / 1_000_000])) }))
+                .sort(sortByMonth),
+            uniqueProducts: [...productSet],
+            uniqueVendedores: [...vendedorSet],
+            summaryData: Object.entries(productTotals)
+                .map(([name, t], i) => ({ name, total: t, color: CHART_COLORS[i % CHART_COLORS.length] }))
+                .sort((a, b) => b.total - a.total),
+            totalGeneral: total,
+        };
     }, [invoices]);
-
-    const detailedMonthlyData = useMemo(() => {
-        const map = {};
-        invoices.forEach(inv => {
-            const m = inv.mes; const prod = inv.producto;
-            if (m < 1 || m > 12) return;
-            const mn = monthNames[m-1];
-            map[mn] ??= {};
-            map[mn][prod] = (map[mn][prod] || 0) + (inv.monto_total || 0);
-        });
-        return Object.entries(map)
-            .map(([mes, prods]) => ({ mes, ...Object.fromEntries(Object.entries(prods).map(([k,v]) => [k, v/1_000_000])) }))
-            .sort((a, b) => monthNames.indexOf(a.mes) - monthNames.indexOf(b.mes));
-    }, [invoices]);
-
-    const uniqueProducts = useMemo(() => {
-        const s = new Set();
-        invoices.forEach(inv => { if (inv.producto) s.add(inv.producto); });
-        return [...s];
-    }, [invoices]);
-
-    const summaryData = useMemo(() =>
-        Object.entries(
-            invoices.reduce((acc, inv) => { acc[inv.producto] = (acc[inv.producto] || 0) + (inv.monto_total || 0); return acc; }, {})
-        ).map(([name, total], i) => ({ name, total, color: CHART_COLORS[i % CHART_COLORS.length] }))
-        .sort((a, b) => b.total - a.total),
-    [invoices]);
-
-    const totalGeneral = useMemo(() => invoices.reduce((s, i) => s + (i.monto_total || 0), 0), [invoices]);
 
     if (loading) return <div className="flex justify-center items-center h-60"><Spinner size={40} /></div>;
 
@@ -183,9 +204,9 @@ const GeneralDashboard = () => {
                     {/* Charts column */}
                     <div className="flex flex-col gap-5">
                         {/* Chart 1 */}
-                        <div className="card p-4">
+                        <div className="card p-4" style={{ contain: 'content' }}>
                             <div className="text-[13px] font-[700] text-n-900 mb-4">Total por Mes</div>
-                            <ResponsiveContainer width="100%" height={280}>
+                            <ResponsiveContainer width="100%" height={280} debounce={100}>
                                 <BarChart data={monthlyData}>
                                     <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                                     <XAxis dataKey="mes" stroke={axisColor} axisLine={false} tickLine={false} style={{ fontSize: 11 }} />
@@ -197,7 +218,7 @@ const GeneralDashboard = () => {
                         </div>
 
                         {/* Chart 2 */}
-                        <div className="card p-4">
+                        <div className="card p-4" style={{ contain: 'content' }}>
                             <div className="text-[13px] font-[700] text-n-900 mb-3">Total por Mes y Producto</div>
                             <div className="flex flex-wrap gap-1.5 mb-4">
                                 {uniqueProducts.map((name, idx) => (
@@ -206,7 +227,7 @@ const GeneralDashboard = () => {
                                     </Badge>
                                 ))}
                             </div>
-                            <ResponsiveContainer width="100%" height={280}>
+                            <ResponsiveContainer width="100%" height={280} debounce={100}>
                                 <BarChart data={detailedMonthlyData}>
                                     <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                                     <XAxis dataKey="mes" stroke={axisColor} axisLine={false} tickLine={false} style={{ fontSize: 11 }} />
@@ -214,6 +235,56 @@ const GeneralDashboard = () => {
                                     <Tooltip contentStyle={tooltipStyle} formatter={v => `$${v.toFixed(2)}M`} />
                                     {uniqueProducts.map((p, idx) => (
                                         <Bar key={p} dataKey={p} stackId="a" fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                                    ))}
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+
+                        {/* Chart 3 */}
+                        <div className="card p-4" style={{ contain: 'content' }}>
+                            <div className="text-[13px] font-[700] text-n-900 mb-3">Total por Mes y Vendedor</div>
+                            <div className="flex flex-wrap gap-1.5 mb-4">
+                                {uniqueVendedores.map((name, idx) => (
+                                    <Badge key={name} style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] + '20', color: CHART_COLORS[idx % CHART_COLORS.length] }}>
+                                        {name}
+                                    </Badge>
+                                ))}
+                            </div>
+                            <ResponsiveContainer width="100%" height={280} debounce={100}>
+                                <BarChart data={vendedorMonthlyData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                                    <XAxis dataKey="mes" stroke={axisColor} axisLine={false} tickLine={false} style={{ fontSize: 11 }} />
+                                    <YAxis stroke={axisColor} axisLine={false} tickLine={false} style={{ fontSize: 11 }} />
+                                    <Tooltip
+                                        content={({ active, payload, label }) => {
+                                            if (!active || !payload?.length) return null;
+                                            const data = payload[0]?.payload;
+                                            if (!data) return null;
+                                            const entries = uniqueVendedores
+                                                .map((name, idx) => ({ name, value: data[name] || 0, color: CHART_COLORS[idx % CHART_COLORS.length] }))
+                                                .filter(e => e.value > 0)
+                                                .sort((a, b) => b.value - a.value);
+                                            const total = entries.reduce((s, e) => s + e.value, 0);
+                                            return (
+                                                <div style={{ ...tooltipStyle, padding: '10px 12px', minWidth: 180 }}>
+                                                    <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 12 }}>{label}</div>
+                                                    {entries.map(e => (
+                                                        <div key={e.name} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, fontSize: 11.5 }}>
+                                                            <span style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: e.color, flexShrink: 0 }} />
+                                                            <span style={{ flex: 1 }}>{e.name}</span>
+                                                            <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>${e.value.toFixed(2)}M</span>
+                                                        </div>
+                                                    ))}
+                                                    <div style={{ borderTop: `1px solid ${gridColor}`, marginTop: 5, paddingTop: 5, display: 'flex', justifyContent: 'space-between', fontSize: 11.5, fontWeight: 700 }}>
+                                                        <span>Total</span>
+                                                        <span style={{ fontVariantNumeric: 'tabular-nums' }}>${total.toFixed(2)}M</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }}
+                                    />
+                                    {uniqueVendedores.map((v, idx) => (
+                                        <Bar key={v} dataKey={v} stackId="a" fill={CHART_COLORS[idx % CHART_COLORS.length]} />
                                     ))}
                                 </BarChart>
                             </ResponsiveContainer>

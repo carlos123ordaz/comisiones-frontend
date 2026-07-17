@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine, Legend
@@ -17,6 +17,42 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Moon, Sun } from 'lucide-react';
 
 const CHART_COLORS = ['#4f46e5','#14b8a6','#f59e0b','#ef4444','#3b82f6','#a855f7'];
+
+const TRIM_MESES = {
+    '1': { 1: 'enero', 2: 'febrero', 3: 'marzo' },
+    '2': { 4: 'abril', 5: 'mayo', 6: 'junio' },
+    '3': { 7: 'julio', 8: 'agosto', 9: 'septiembre' },
+    '4': { 10: 'octubre', 11: 'noviembre', 12: 'diciembre' },
+};
+
+const CustomGauge = ({ value, max }) => {
+    const pct = max > 0 ? (value / max) * 100 : 0;
+    const gaugeData = [
+        { value, fill: pct >= 100 ? '#10b981' : pct >= 80 ? '#4f46e5' : '#f59e0b' },
+        { value: Math.max(0, max - value), fill: '#f1f2f5' },
+    ];
+    return (
+        <div className="relative w-full" style={{ height: 240 }}>
+            <ResponsiveContainer width="100%" height="100%" debounce={100}>
+                <PieChart>
+                    <Pie data={gaugeData} cx="50%" cy="72%" startAngle={180} endAngle={0} innerRadius="68%" outerRadius="88%" dataKey="value" stroke="none">
+                        {gaugeData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                    </Pie>
+                </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute bottom-[26%] left-0 right-0 flex flex-col items-center">
+                <span className="mono tnum text-[28px] font-[700] text-n-900 leading-[1]">{value.toFixed(2)}</span>
+                <span className="text-[11px] text-n-500 mt-0.5">mil</span>
+            </div>
+            <span className="absolute bottom-[14%] left-[14%] text-[11px] text-n-500">0.00</span>
+            <span className="absolute bottom-[14%] right-[14%] text-[11px] text-n-500">{max.toFixed(2)}</span>
+            <span className="absolute top-[8%] left-0 right-0 text-center mono tnum text-[15px] font-[600]"
+                style={{ color: pct >= 100 ? '#10b981' : pct >= 80 ? '#4f46e5' : '#f59e0b' }}>
+                {pct.toFixed(1)}%
+            </span>
+        </div>
+    );
+};
 
 const UserDashboard = () => {
     const { isDark, toggleTheme } = useTheme();
@@ -38,7 +74,7 @@ const UserDashboard = () => {
     const skipNextReactive = useRef(false);
     const availableYears   = [2025, 2026];
 
-    const fetchData = async (name) => {
+    const fetchData = useCallback(async (name) => {
         if (!name) return;
         try {
             setRefreshing(true);
@@ -53,7 +89,7 @@ const UserDashboard = () => {
         } catch (e) {
             setError(e.response?.data?.detail || 'Error al cargar datos');
         } finally { setRefreshing(false); }
-    };
+    }, [trimestreSelected, selectedYear]);
 
     useEffect(() => {
         if (!user) return;
@@ -121,91 +157,53 @@ const UserDashboard = () => {
         } finally { setDownloading(false); }
     };
 
-    /* ── Data helpers ─────────────────────────────────────── */
-    const trimMeses = {
-        '1':{1:'enero',2:'febrero',3:'marzo'},
-        '2':{4:'abril',5:'mayo',6:'junio'},
-        '3':{7:'julio',8:'agosto',9:'septiembre'},
-        '4':{10:'octubre',11:'noviembre',12:'diciembre'},
-    };
+    /* ── Memoized data ─────────────────────────────────────── */
+    const productosPositivos = useMemo(() =>
+        resume?.productos?.filter(p => (p['Total'] || 0) > 0) || [],
+    [resume]);
 
-    const getProductosPositivos = () =>
-        resume?.productos?.filter(p => (p['Total'] || 0) > 0) || [];
-
-    const getProductoMesData = () => {
-        const pos = getProductosPositivos();
-        if (!pos.length) return [];
-        const mesesMap = trimMeses[trimestreSelected];
+    const productoMesData = useMemo(() => {
+        if (!productosPositivos.length) return [];
+        const mesesMap = TRIM_MESES[trimestreSelected];
         const mesesNums = Object.keys(mesesMap).map(Number);
         return Object.values(mesesMap).map((nombre, i) => {
             const mesNum = mesesNums[i];
             const dp = { mes: nombre };
-            pos.forEach(p => { dp[p['Producto']] = (p[mesNum] || 0) > 0 ? (p[mesNum] || 0) / 1000 : 0; });
+            productosPositivos.forEach(p => { dp[p['Producto']] = (p[mesNum] || 0) > 0 ? (p[mesNum] || 0) / 1000 : 0; });
             return dp;
         });
-    };
+    }, [productosPositivos, trimestreSelected]);
 
-    const getMonthlyData = () => {
+    const monthlyData = useMemo(() => {
         if (!resume?.endress) return [];
-        const mesesMap  = trimMeses[trimestreSelected];
-        const umbralM   = resume.endress['Umbral Mensual'] || 0;
+        const mesesMap = TRIM_MESES[trimestreSelected];
+        const umbralM = resume.endress['Umbral Mensual'] || 0;
         return Object.keys(mesesMap).map(mes => {
             const total = resume.endress[parseInt(mes)] || 0;
-            return { mes: mesesMap[mes], total: total/1000, totalOriginal: total, color: total >= umbralM ? '#4f46e5' : '#f59e0b' };
+            return { mes: mesesMap[mes], total: total / 1000, totalOriginal: total, color: total >= umbralM ? '#4f46e5' : '#f59e0b' };
         });
-    };
+    }, [resume, trimestreSelected]);
 
-    const getGaugeData = () => {
-        if (!resume?.endress) return { value:0, max:0 };
-        return { value: (resume.endress['Total'] || 0)/1000, max: (resume.endress['Umbral Trimestral'] || 0)/1000 };
-    };
+    const gaugeInfo = useMemo(() => {
+        if (!resume?.endress) return { value: 0, max: 0 };
+        return { value: (resume.endress['Total'] || 0) / 1000, max: (resume.endress['Umbral Trimestral'] || 0) / 1000 };
+    }, [resume]);
 
-    const productoMesData    = getProductoMesData();
-    const productosPositivos = getProductosPositivos();
-    const monthlyData        = getMonthlyData();
-    const gaugeInfo          = getGaugeData();
-    const totalAmount        = resume?.productos?.reduce((s, p) => s + (p['Total'] || 0), 0) || 0;
-    const esUNAU             = tipoVista === 'UNAU';
+    const totalAmount = useMemo(() =>
+        resume?.productos?.reduce((s, p) => s + (p['Total'] || 0), 0) || 0,
+    [resume]);
 
-    /* ── Gauge ─────────────────────────────────────────────── */
-    const CustomGauge = ({ value, max }) => {
-        const pct = max > 0 ? (value / max) * 100 : 0;
-        const gaugeData = [
-            { value, fill: pct >= 100 ? '#10b981' : pct >= 80 ? '#4f46e5' : '#f59e0b' },
-            { value: Math.max(0, max - value), fill: '#f1f2f5' },
-        ];
-        return (
-            <div className="relative w-full" style={{ height: 240 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie data={gaugeData} cx="50%" cy="72%" startAngle={180} endAngle={0} innerRadius="68%" outerRadius="88%" dataKey="value" stroke="none">
-                            {gaugeData.map((e,i) => <Cell key={i} fill={e.fill} />)}
-                        </Pie>
-                    </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute bottom-[26%] left-0 right-0 flex flex-col items-center">
-                    <span className="mono tnum text-[28px] font-[700] text-n-900 leading-[1]">{value.toFixed(2)}</span>
-                    <span className="text-[11px] text-n-500 mt-0.5">mil</span>
-                </div>
-                <span className="absolute bottom-[14%] left-[14%] text-[11px] text-n-500">0.00</span>
-                <span className="absolute bottom-[14%] right-[14%] text-[11px] text-n-500">{max.toFixed(2)}</span>
-                <span className="absolute top-[8%] left-0 right-0 text-center mono tnum text-[15px] font-[600]"
-                    style={{ color: pct >= 100 ? '#10b981' : pct >= 80 ? '#4f46e5' : '#f59e0b' }}>
-                    {pct.toFixed(1)}%
-                </span>
-            </div>
-        );
-    };
+    const esUNAU = tipoVista === 'UNAU';
 
-    const gridColor   = isDark ? '#2e3248' : '#e1e4ea';
-    const axisColor   = isDark ? '#5a6070' : '#7a818f';
-    const tooltipStyle = {
+    const gridColor    = useMemo(() => isDark ? '#2e3248' : '#e1e4ea', [isDark]);
+    const axisColor    = useMemo(() => isDark ? '#5a6070' : '#7a818f', [isDark]);
+    const tooltipStyle = useMemo(() => ({
         backgroundColor: isDark ? '#15181f' : '#fff',
         border: `1px solid ${isDark ? '#2e3248' : '#e1e4ea'}`,
         borderRadius: 10,
         fontSize: 12,
         color: isDark ? '#dde2e9' : '#242832',
-    };
+    }), [isDark]);
 
     if (loading) return <div className="flex justify-center items-center h-60"><Spinner size={40} /></div>;
 
@@ -314,7 +312,7 @@ const UserDashboard = () => {
                 <div className="card p-4">
                     <div className="text-[13px] font-[700] text-n-900 mb-4">Ventas por Producto y Mes (en miles) — {selectedYear}</div>
                     {productoMesData.length > 0 && productosPositivos.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={340}>
+                        <ResponsiveContainer width="100%" height={340} debounce={100}>
                             <BarChart data={productoMesData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                                 <XAxis dataKey="mes" stroke={axisColor} axisLine={false} tickLine={false} style={{fontSize:11}} />
@@ -359,7 +357,7 @@ const UserDashboard = () => {
                             <div className="text-[12.5px] font-[600] text-n-900 mb-3">Endress por Mes (en miles)</div>
                             {monthlyData.length > 0 ? (
                                 <>
-                                    <ResponsiveContainer width="100%" height={220}>
+                                    <ResponsiveContainer width="100%" height={220} debounce={100}>
                                         <BarChart data={monthlyData} barSize={50}>
                                             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                                             <XAxis dataKey="mes" stroke={axisColor} axisLine={false} tickLine={false} style={{fontSize:11}} />

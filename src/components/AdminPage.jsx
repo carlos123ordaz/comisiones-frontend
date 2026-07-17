@@ -34,8 +34,20 @@ export const AdminPage = () => {
     const [downloadDialog, setDownloadDialog] = useState({ open: false, filename: '', savedPath: '' });
     const [syncing, setSyncing]     = useState(false);
     const [syncMsg, setSyncMsg]     = useState({ type: '', text: '' });
+    const [lastSyncTime, setLastSyncTime] = useState(null);
     const [reportMenuOpen, setReportMenuOpen] = useState(false);
     const reportMenuRef = useRef(null);
+
+    // Fetch last sync time from backend
+    const fetchLastSync = async () => {
+        try {
+            const { data } = await axios.get(`${URI_API}/invoices/last-sync`);
+            if (data.timestamp) {
+                setLastSyncTime(moment(data.timestamp).format('DD/MM/YYYY HH:mm'));
+            }
+        } catch { /* silently ignore */ }
+    };
+    useEffect(() => { fetchLastSync(); }, []);
 
     // Close report menu on click outside
     useEffect(() => {
@@ -89,6 +101,7 @@ export const AdminPage = () => {
                 headers: { 'Content-Type': 'multipart/form-data' },
                 timeout: 120000,
             });
+            await fetchLastSync();
             setSyncMsg({ type: 'success', text: r.data.message || 'Sincronización exitosa' });
         } catch (e) {
             setSyncMsg({ type: 'error', text: e.response?.data?.detail || e.message || 'Error al sincronizar' });
@@ -335,6 +348,11 @@ export const AdminPage = () => {
                         {user && !isCollapsed && !isMobile && (
                             <span className="text-[12px] text-n-500 truncate max-w-[160px]">
                                 {user.nombre}
+                            </span>
+                        )}
+                        {lastSyncTime && !syncing && (
+                            <span className="text-[11px] text-n-400 hidden sm:inline" title="Última actualización">
+                                Últ. act: {lastSyncTime}
                             </span>
                         )}
                         <Button
